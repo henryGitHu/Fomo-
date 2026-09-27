@@ -7,6 +7,7 @@ from datetime import datetime
 from rich import box
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from .scoring import FilterResult, MomentumResult
 from .models import Snapshot
@@ -22,10 +23,17 @@ SIGNAL_LABELS = {
     "price_uptrend": "U",
     "giant_candle": "[red]![/red]",
 }
-LEGEND = ("[dim]Score = momentum 0-100 | Vol x = last-5-min volume vs normal pace | "
-          "Buys = % of last-5-min trades that were buys\n"
-          "Sig: V = volume 2x+ normal, B = 60%+ buys, U = up on 5m and 1h, "
-          "! = one giant candle (score halved)[/dim]")
+LEGEND = ("[dim]Score = momentum 0-100.  Vol x = 5-min volume vs normal.\n"
+          "Buys = % of 5-min trades that were buys.\n"
+          "Sig: V = volume 2x+ normal, B = 60%+ buys,\n"
+          "     U = up on 5m and 1h, ! = one giant candle (score halved)[/dim]")
+
+SHORT_CHAIN = {"solana": "SOL", "ethereum": "ETH", "base": "BASE", "bnb chain": "BSC",
+               "bsc": "BSC", "arbitrum": "ARB", "polygon": "POL", "avalanche": "AVAX"}
+
+
+def _short_chain(name: str) -> str:
+    return SHORT_CHAIN.get(name.lower(), name[:6])
 
 
 def _money(v: float | None) -> str:
@@ -79,37 +87,58 @@ def print_top_movers(rows: list[Row], top_n: int, only_passing: bool,
     shown.sort(key=lambda r: r[1].score, reverse=True)
     shown = shown[:top_n]
 
-    title = (f"Top movers  {datetime.now():%Y-%m-%d %H:%M:%S}   "
-             f"scanned {stats.get('snapshots', 0)} tokens, "
-             f"{stats.get('passing', 0)} pass basic filters")
-    table = Table(title=title, title_justify="left", header_style="bold cyan",
-                  box=box.SIMPLE_HEAD, pad_edge=False, expand=False)
-    for col, just in (("Score", "right"), ("Token", "left"), ("Chain", "left"),
-                      ("Price", "right"), ("5m", "right"), ("1h", "right"),
-                      ("Vol 5m", "right"), ("Vol 1h", "right"), ("Vol x", "right"),
-                      ("Buys", "right"), ("Liq", "right"), ("MCap", "right"),
-                      ("Age", "right"), ("Sig", "left")):
-        table.add_column(col, justify=just, no_wrap=True, min_width=4 if col == "Sig" else None)
+    title = (f"Top movers  {datetime.now():%H:%M:%S}  "
+             f"scanned {stats.get('snapshots', 0)}, "
+             f"{stats.get('passing', 0)} pass filters")
 
+    # (header, justify, drop priority: higher numbers are hidden first when narrow)
+    columns = [("Score", "right", 0), ("Token", "left", 0), ("Chain", "left", 1),
+               ("Price", "right", 7), ("5m", "right", 2), ("1h", "right", 2),
+               ("Vol 5m", "right", 9), ("Vol 1h", "right", 6), ("Vol x", "right", 3),
+               ("Buys", "right", 3), ("Liq", "right", 4), ("MCap", "right", 10),
+               ("Age", "right", 8), ("Sig", "left", 1)]
+    cells: list[list[str]] = []
     for snap, mom, flt, feeds in shown:
         token = (snap.symbol or snap.token_address)[:10]
         if not flt.passed:
-            token = f"[dim]{token} (filtered)[/dim]"
+            token = f"[dim]{token}*[/dim]"
         sig = [SIGNAL_LABELS.get(x, x) for x in mom.signals]
         vol_x = "-" if mom.volume_ratio is None else f"{mom.volume_ratio:.1f}x"
-        table.add_row(
-            f"[bold]{mom.score:.0f}[/bold]", token, snap.chain, _price(snap.price_usd),
+        cells.append([
+            f"[bold]{mom.score:.0f}[/bold]", token, _short_chain(snap.chain), _price(snap.price_usd),
             _pct(snap.price_change_m5), _pct(snap.price_change_h1),
             _money(snap.volume_m5), _money(snap.volume_h1), vol_x, _ratio(mom.buy_ratio_m5),
             _money(snap.liquidity_usd), _money(snap.market_cap_usd or snap.fdv_usd),
             _age(snap), "".join(sig),
-        )
+        ])
+
+    # Hide the least important columns until the table fits the window.
+    widths = [max([len(h), 4 if h == "Sig" else 0] + [Text.from_markup(r[i]).cell_len for r in cells])
+              for i, (h, _, _) in enumerate(columns)]
+    keep = list(range(len(columns)))
+    gap = 3  # padding + separator between columns
+    while (sum(widths[i] for i in keep) + gap * (len(keep) - 1) + 2 > console.width
+           and any(columns[i][2] > 0 for i in keep)):
+        worst = max(keep, key=lambda i: columns[i][2])
+        keep.remove(worst)
+
+    table = Table(title=title, title_justify="left", header_style="bold cyan",
+                  box=box.SIMPLE_HEAD, pad_edge=False, expand=False)
+    for i in keep:
+        header, just, _ = columns[i]
+        table.add_column(header, justify=just, no_wrap=True)
+    for r in cells:
+        table.add_row(*(r[i] for i in keep))
     if not shown:
         console.print(f"[yellow]{title}\nNo tokens to show this round "
                       f"(nothing passed the basic filters).[/yellow]")
         return
     console.print(table)
     console.print(LEGEND)
+    if len(keep) < len(columns):
+        hidden = ", ".join(columns[i][0] for i in range(len(columns)) if i not in keep)
+        console.print(f"[dim]Hidden to fit the window: {hidden}. "
+                      f"Make the window wider to see them.[/dim]")
     top, feeds = shown[0][0], shown[0][3]
     seen = f" (seen in: {', '.join(sorted(feeds))})" if feeds else ""
     if top.url:

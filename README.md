@@ -7,13 +7,13 @@ sellers, and price rising steadily rather than in one spike.
 > **It never trades.** It only watches and reports. You decide what to do,
 > and you place any trade yourself.
 
-## What works so far (phase 1 of 6)
+## What works so far (phases 1–2 of 6)
 
 | Phase | What it adds | Status |
 |---|---|---|
 | 1 | Settings, database, DexScreener + GeckoTerminal data, console list of top movers | **Done** |
-| 2 | Safety checks (Solana mint/freeze authority, EVM honeypot/tax checks) | Next |
-| 3 | Combined score + Telegram phone alerts with suggested trades | Planned |
+| 2 | Safety checks (Solana mint/freeze authority, EVM honeypot/tax checks) | **Done** |
+| 3 | Combined score + Telegram phone alerts with suggested trades | Next |
 | 4 | Paper-trade tracking + `report.bat` performance report | Planned |
 | 5 | Reddit mention tracking | Planned |
 | 6 | Telegram channel mention tracking | Planned |
@@ -29,7 +29,9 @@ Right now, every scan does this:
    "normal" volume and can spot sudden jumps.
 4. Removes anything below the basic filters (default: under $25k liquidity,
    under $50k volume in the last hour, or less than 10 minutes old).
-5. Prints the highest-momentum tokens in a table.
+5. Runs **safety checks** on the highest-momentum tokens that passed the
+   filters (details below), and hides any that fail.
+6. Prints the highest-momentum tokens in a table, with a Safety column.
 
 ---
 
@@ -42,7 +44,7 @@ Right now, every scan does this:
    `.venv` folder, installs what the scanner needs, creates your `.env`
    secrets file, and checks `config.yaml`. Wait for "Setup complete".
 
-That's all phase 1 needs. You don't need any accounts or API keys.
+That's all phases 1 and 2 need. You don't need any accounts or API keys.
 
 ## Running it
 
@@ -75,11 +77,57 @@ tries again on the next scan. It won't crash.
 | MCap | Market cap (or fully-diluted value if market cap isn't known) |
 | Age | How long the trading pool has existed |
 | Sig | **V** = volume at least 2× normal, **B** = at least 60% buys, **U** = price up over both 5m and 1h, **!** = the whole move came in one giant candle (score cut in half) |
+| Safety | **OK** = passed every check, **UNVER** = one or more checks couldn't be done, **FAIL** = failed a check (hidden by default), **-** = not checked yet |
 
-Under the table is a chart link for the #1 token.
+Below the table, **Safety notes** explain in plain words why any listed token
+is UNVERIFIED. Then there's a chart link for the #1 token.
 
-**Momentum isn't safety.** Until phase 2 is done, nothing here has been
-checked for rugs or honeypots. Don't trade from this list yet.
+If your window is too narrow for every column, the least important ones are
+hidden and listed underneath. Make the window wider to see them.
+
+## Safety checks
+
+Safety checks are **hard gates**: a token that fails any of them is never
+alerted. If a check can't be finished (a site is down, or has no data on the
+token), the token is marked **UNVERIFIED** instead of being quietly passed.
+No automated check can catch every scam, so treat OK as "no red flags found",
+not "safe".
+
+**Solana tokens** (data from RugCheck; Solana's public server as a backup):
+- **Mint authority revoked.** Otherwise the creator can print unlimited new tokens.
+- **Freeze authority revoked.** Otherwise the creator can freeze your wallet so you can't sell.
+- **LP burned or locked (at least 80%).** Otherwise the creator can pull the
+  liquidity. Tokens still on a pump.fun-style bonding curve have no LP to
+  pull, so they pass this check.
+- **No other RugCheck "danger" warnings**, such as dangerous Token-2022
+  features or the token being flagged as already rugged.
+
+**EVM tokens** (Ethereum, Base, BNB Chain, Arbitrum; data from GoPlus, with
+honeypot.is as a second opinion):
+- **Not a honeypot**, meaning you can actually sell. If either source says
+  it's a honeypot, it fails.
+- **Buy and sell tax at or below 10%.** When both sources report a tax, the
+  higher one is used.
+- **Contract source code published**, so it can be checked.
+- **No dangerous owner powers:** minting, blacklisting, pausing trading,
+  changing taxes, hidden or reclaimable ownership, self-destruct. Powers only
+  count while someone still owns the contract. Once ownership is renounced,
+  they can't be used.
+
+**All chains:**
+- **Top 10 wallets hold 40% or less** of the supply, not counting the trading
+  pool itself or burn addresses.
+
+Holder and LP data isn't always available. By default, missing holder or LP
+data is noted but doesn't make a token UNVERIFIED. Set `safety.strict_mode:
+true` if you want it to.
+
+Each scan checks up to 10 new tokens (`safety.max_checks_per_scan`), highest
+momentum first. Results are remembered: 60 minutes for OK, 6 hours for FAIL,
+15 minutes for UNVERIFIED. So the first few scans after starting are slower,
+while it works through the list.
+
+All thresholds are in the `safety:` section of `config.yaml`.
 
 ## Changing settings
 
@@ -100,8 +148,8 @@ Common changes:
 If you make a mistake in the file, the scanner stops at startup and tells
 you which setting to fix, in plain English.
 
-Secrets such as bot tokens go in **`.env`**, never in `config.yaml`. Phase 1
-doesn't use any secrets.
+Secrets such as bot tokens go in **`.env`**, never in `config.yaml`. Phases 1
+and 2 don't use any secrets.
 
 ## Where things are stored
 
@@ -121,9 +169,13 @@ limit, and backs off if a source asks it to slow down.
 |---|---|---|---|
 | DexScreener | Boosted tokens, new token profiles, pair data | 60/min (lists), 300/min (pairs) | 50 and 250/min |
 | GeckoTerminal | Trending pools and new pools, per chain | 30/min | 25/min |
+| RugCheck | Solana token safety report | not published | 15/min |
+| Solana public RPC | Mint/freeze authority (backup only) | 100 per 10s | 30/min |
+| GoPlus | EVM contract security | 30/min | 20/min |
+| honeypot.is | EVM buy/sell simulation | not published | 20/min |
 
-A full scan takes roughly 30 seconds, and most of that is waiting to stay
-under GeckoTerminal's limit.
+A full scan takes roughly 30–60 seconds, and most of that is waiting to stay
+under the free rate limits.
 
 ## Start automatically with Windows (optional)
 

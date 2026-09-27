@@ -42,6 +42,7 @@ class Chain:
     dexscreener_id: str
     geckoterminal_id: str
     enabled: bool = True
+    chain_id: int | None = None  # EVM chain number (1 = Ethereum, 56 = BNB, ...)
 
 
 @dataclass
@@ -75,6 +76,42 @@ class Filters:
     min_liquidity_usd: float
     min_volume_1h_usd: float
     min_pair_age_minutes: float
+
+
+@dataclass
+class SolanaSafety:
+    require_mint_authority_revoked: bool
+    require_freeze_authority_revoked: bool
+    min_lp_locked_pct: float
+    fail_on_rugcheck_danger: bool
+    rpc_url: str
+    rugcheck_requests_per_minute: int
+    rpc_requests_per_minute: int
+
+
+@dataclass
+class EvmSafety:
+    max_buy_tax_pct: float
+    max_sell_tax_pct: float
+    fail_if_not_open_source: bool
+    fail_on_owner_privileges: bool
+    use_honeypot_is: bool
+    goplus_requests_per_minute: int
+    honeypot_is_requests_per_minute: int
+
+
+@dataclass
+class SafetySettings:
+    enabled: bool
+    max_checks_per_scan: int
+    recheck_minutes_pass: int
+    recheck_minutes_fail: int
+    recheck_minutes_unverified: int
+    hide_failed: bool
+    strict_mode: bool
+    max_top10_holders_pct: float
+    solana: SolanaSafety
+    evm: EvmSafety
 
 
 @dataclass
@@ -122,6 +159,7 @@ class Config:
     dexscreener: DexScreenerSettings
     geckoterminal: GeckoTerminalSettings
     filters: Filters
+    safety: SafetySettings
     momentum: MomentumSettings
     display: DisplaySettings
     storage: StorageSettings
@@ -208,8 +246,13 @@ def _parse_chains(raw: dict) -> list[Chain]:
         enabled = item.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ConfigError(f"Chain '{name}': enabled must be true or false.")
+        chain_id = item.get("chain_id")
+        if chain_id in ("", None):
+            chain_id = None
+        elif isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id <= 0:
+            raise ConfigError(f"Chain '{name}': chain_id must be a whole number like 1 or 56.")
         chains.append(Chain(name=name, type=ctype, dexscreener_id=ds_id,
-                            geckoterminal_id=gt_id, enabled=enabled))
+                            geckoterminal_id=gt_id, enabled=enabled, chain_id=chain_id))
     if not any(c.enabled for c in chains):
         raise ConfigError("Every chain in config.yaml is disabled - enable at least one.")
     return chains
@@ -246,6 +289,9 @@ def load_config(config_path: Path | str | None = None,
     ds = _section(sources, "dexscreener")
     gt = _section(sources, "geckoterminal")
     flt = _section(raw, "filters")
+    saf = _section(raw, "safety")
+    saf_sol = _section(saf, "solana")
+    saf_evm = _section(saf, "evm")
     mom = _section(raw, "momentum")
     disp = _section(raw, "display")
     sto = _section(raw, "storage")
@@ -291,6 +337,34 @@ def load_config(config_path: Path | str | None = None,
             min_liquidity_usd=_get(flt, "filters", "min_liquidity_usd", float, minimum=0),
             min_volume_1h_usd=_get(flt, "filters", "min_volume_1h_usd", float, minimum=0),
             min_pair_age_minutes=_get(flt, "filters", "min_pair_age_minutes", float, minimum=0),
+        ),
+        safety=SafetySettings(
+            enabled=_get(saf, "safety", "enabled", bool),
+            max_checks_per_scan=_get(saf, "safety", "max_checks_per_scan", int, minimum=0, maximum=200),
+            recheck_minutes_pass=_get(saf, "safety", "recheck_minutes_pass", int, minimum=1),
+            recheck_minutes_fail=_get(saf, "safety", "recheck_minutes_fail", int, minimum=1),
+            recheck_minutes_unverified=_get(saf, "safety", "recheck_minutes_unverified", int, minimum=1),
+            hide_failed=_get(saf, "safety", "hide_failed", bool),
+            strict_mode=_get(saf, "safety", "strict_mode", bool),
+            max_top10_holders_pct=_get(saf, "safety", "max_top10_holders_pct", float, minimum=0, maximum=100),
+            solana=SolanaSafety(
+                require_mint_authority_revoked=_get(saf_sol, "safety.solana", "require_mint_authority_revoked", bool),
+                require_freeze_authority_revoked=_get(saf_sol, "safety.solana", "require_freeze_authority_revoked", bool),
+                min_lp_locked_pct=_get(saf_sol, "safety.solana", "min_lp_locked_pct", float, minimum=0, maximum=100),
+                fail_on_rugcheck_danger=_get(saf_sol, "safety.solana", "fail_on_rugcheck_danger", bool),
+                rpc_url=_get(saf_sol, "safety.solana", "rpc_url", str) or "https://api.mainnet-beta.solana.com",
+                rugcheck_requests_per_minute=_get(saf_sol, "safety.solana", "rugcheck_requests_per_minute", int, minimum=1, maximum=120),
+                rpc_requests_per_minute=_get(saf_sol, "safety.solana", "rpc_requests_per_minute", int, minimum=1, maximum=600),
+            ),
+            evm=EvmSafety(
+                max_buy_tax_pct=_get(saf_evm, "safety.evm", "max_buy_tax_pct", float, minimum=0, maximum=100),
+                max_sell_tax_pct=_get(saf_evm, "safety.evm", "max_sell_tax_pct", float, minimum=0, maximum=100),
+                fail_if_not_open_source=_get(saf_evm, "safety.evm", "fail_if_not_open_source", bool),
+                fail_on_owner_privileges=_get(saf_evm, "safety.evm", "fail_on_owner_privileges", bool),
+                use_honeypot_is=_get(saf_evm, "safety.evm", "use_honeypot_is", bool),
+                goplus_requests_per_minute=_get(saf_evm, "safety.evm", "goplus_requests_per_minute", int, minimum=1, maximum=30),
+                honeypot_is_requests_per_minute=_get(saf_evm, "safety.evm", "honeypot_is_requests_per_minute", int, minimum=1, maximum=120),
+            ),
         ),
         momentum=MomentumSettings(
             weights=weights,

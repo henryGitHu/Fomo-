@@ -74,3 +74,13 @@ def same_address(chain_type: str, a: str, b: str) -> bool:
 
 def token_key(chain_type: str, address: str) -> str:
     return address.lower() if chain_type == "evm" else address
+
+
+@dataclass
+class ScanRow:
+    """Everything we know about one token after a scan."""
+    snap: Snapshot
+    momentum: "object"            # scoring.MomentumResult
+    filters: "object"             # scoring.FilterResult
+    feeds: set[str] = field(default_factory=set)
+    safety: "object | None" = None  # safety.SafetyResult, None = not checked yet

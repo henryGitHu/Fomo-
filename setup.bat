@@ -51,7 +51,7 @@ if errorlevel 1 (
 rem --- Create .env for secrets if it doesn't exist yet ---
 if not exist ".env" (
     copy ".env.example" ".env" >nul
-    echo Created .env ^(secrets file^). Phase 1 doesn't need anything in it.
+    echo Created .env ^(secrets file^). Nothing needs to go in it yet.
 )
 
 echo.

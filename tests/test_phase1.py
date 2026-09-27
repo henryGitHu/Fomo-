@@ -143,19 +143,19 @@ def test_full_scan_against_fixtures(cfg, tmp_path):
     storage = Storage(tmp_path / "t.db")
     rows = Scanner(cfg, storage, http).scan_once()
 
-    by_sym = {r[0].symbol: r for r in rows}
+    by_sym = {r.snap.symbol: r for r in rows}
     # Sui boost ignored (chain not configured); others discovered.
     assert set(by_sym) == {"ROCKET", "FRESH", "BASED", "WHALE", "GTONLY"}
-    rocket = by_sym["ROCKET"][0]
+    rocket = by_sym["ROCKET"].snap
     # Most liquid pair where ROCKET is the base token was chosen.
     assert rocket.liquidity_usd == 210000 and rocket.source == "dexscreener"
-    assert by_sym["ROCKET"][3] >= {"ds_boost_latest", "gt_trending"}
+    assert by_sym["ROCKET"].feeds >= {"ds_boost_latest", "gt_trending"}
     # GTONLY had no DexScreener pair -> GeckoTerminal fallback snapshot.
-    assert by_sym["GTONLY"][0].source == "geckoterminal"
+    assert by_sym["GTONLY"].snap.source == "geckoterminal"
     # EVM address from boosts (mixed case) matched the lowercase pair address.
-    assert by_sym["BASED"][0].price_usd == pytest.approx(0.0312)
+    assert by_sym["BASED"].snap.price_usd == pytest.approx(0.0312)
     # FRESH is 25 min old but only $40k liquidity & $70k volume -> passes; age ok.
-    assert by_sym["FRESH"][2].passed
+    assert by_sym["FRESH"].filters.passed
     # One batched DexScreener pair call per chain with candidates.
     assert sum("/tokens/v1/" in c for c in calls) == 3
     # 429 from GeckoTerminal was retried then abandoned without crashing.

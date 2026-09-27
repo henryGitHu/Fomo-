@@ -24,8 +24,10 @@
 #                        (e.g. dexscreener.com/<dexscreener_id>/...)
 #   geckoterminal_id  -> the network name GeckoTerminal uses in its URLs
 #                        (e.g. geckoterminal.com/<geckoterminal_id>/pools/...)
-#   type              -> "solana" or "evm" (used by the safety checks
-#                        in phase 2; Ethereum-style chains are "evm")
+#   type              -> "solana" or "evm" (decides which safety checks
+#                        run; Ethereum-style chains are "evm")
+#   chain_id          -> EVM chains only: the chain's standard number
+#                        (see chainlist.org). Needed for the safety checks.
 # Leave an ID blank ("") if that site doesn't support the chain.
 chains:
   - name: Solana
@@ -39,24 +41,28 @@ chains:
     type: evm
     dexscreener_id: ethereum
     geckoterminal_id: eth
+    chain_id: 1
 
   - name: Base
     enabled: true
     type: evm
     dexscreener_id: base
     geckoterminal_id: base
+    chain_id: 8453
 
   - name: BNB Chain
     enabled: true
     type: evm
     dexscreener_id: bsc
     geckoterminal_id: bsc
+    chain_id: 56
 
   - name: Arbitrum
     enabled: true
     type: evm
     dexscreener_id: arbitrum
     geckoterminal_id: arbitrum
+    chain_id: 42161
 
 
 # ---------------------------------------------------------------------
@@ -125,6 +131,71 @@ filters:
   # Ignore pools younger than this many minutes (the first minutes of a
   # launch are chaos and prime rug territory).
   min_pair_age_minutes: 10
+
+
+# ---------------------------------------------------------------------
+# SAFETY CHECKS - hard gates. A token that FAILS any of these is never
+# alerted. If a check can't be completed (a site is down, no data), the
+# token is marked UNVERIFIED instead of quietly passing.
+# ---------------------------------------------------------------------
+safety:
+  # Master switch. false = skip all safety checks (not recommended).
+  enabled: true
+
+  # Checks take time and have rate limits, so each scan only checks the
+  # highest-momentum tokens that passed the basic filters, up to this many.
+  # Results are remembered (below), so later scans check new tokens.
+  max_checks_per_scan: 10
+
+  # How long to trust a result before checking the token again (minutes).
+  recheck_minutes_pass: 60
+  recheck_minutes_fail: 360
+  recheck_minutes_unverified: 15
+
+  # true = hide tokens that FAILED safety from the top-movers table.
+  hide_failed: true
+
+  # Some data (top holders, LP lock) isn't always available. With
+  # strict_mode: false, missing holder/LP data is noted but doesn't make a
+  # token UNVERIFIED. With true, any missing data means UNVERIFIED.
+  strict_mode: false
+
+  # Largest share (percent) of the supply the top 10 wallets may hold,
+  # NOT counting the trading pool itself or burn addresses.
+  max_top10_holders_pct: 40
+
+  solana:
+    # The creator can still print new tokens -> fail.
+    require_mint_authority_revoked: true
+    # The creator can still freeze your tokens so you can't sell -> fail.
+    require_freeze_authority_revoked: true
+    # Minimum percent of the pool's liquidity tokens that must be burned or
+    # locked (so the creator can't pull the liquidity). 0 = don't check.
+    min_lp_locked_pct: 80
+    # Also fail on any other "danger"-level warning from RugCheck
+    # (e.g. dangerous Token-2022 features, the token being flagged as rugged).
+    fail_on_rugcheck_danger: true
+    # Free public Solana server, used if RugCheck is unavailable.
+    rpc_url: https://api.mainnet-beta.solana.com
+    # Speed limits (requests per minute) for RugCheck and the Solana server.
+    rugcheck_requests_per_minute: 15
+    rpc_requests_per_minute: 30
+
+  evm:
+    # Maximum buy and sell tax, in percent.
+    max_buy_tax_pct: 10
+    max_sell_tax_pct: 10
+    # Fail if the contract's source code isn't published (can't be checked).
+    fail_if_not_open_source: true
+    # Fail if the owner still controls dangerous functions: minting new
+    # tokens, blacklisting wallets, pausing trading, changing taxes, or
+    # hidden/reclaimable ownership.
+    fail_on_owner_privileges: true
+    # Use honeypot.is as a second opinion on honeypot + taxes.
+    use_honeypot_is: true
+    # Speed limits. GoPlus's free limit is 30/min; keep below it.
+    goplus_requests_per_minute: 20
+    honeypot_is_requests_per_minute: 20
 
 
 # ---------------------------------------------------------------------

@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS idx_snapshots_token_ts ON snapshots (chain, token_address, ts);
 CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON snapshots (ts);
 
+CREATE TABLE IF NOT EXISTS safety_checks (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts             REAL NOT NULL,
+    chain          TEXT NOT NULL,
+    token_address  TEXT NOT NULL,
+    status         TEXT NOT NULL,      -- PASS / FAIL / UNVERIFIED
+    details        TEXT                -- JSON: individual checks + sources
+);
+CREATE INDEX IF NOT EXISTS idx_safety_token_ts ON safety_checks (chain, token_address, ts);
+
 CREATE TABLE IF NOT EXISTS mentions (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     ts             REAL NOT NULL,
@@ -170,7 +180,27 @@ class Storage:
 
     def prune_snapshots(self, older_than: float) -> int:
         cur = self.conn.execute("DELETE FROM snapshots WHERE ts < ?", (older_than,))
+        self.conn.execute("DELETE FROM safety_checks WHERE ts < ?", (older_than,))
         return cur.rowcount
+
+    # ------------------------------------------------------------------ safety
+    def save_safety(self, chain: str, address: str, result) -> None:
+        self.conn.execute(
+            "INSERT INTO safety_checks (ts, chain, token_address, status, details) VALUES (?, ?, ?, ?, ?)",
+            (result.checked_at, chain, address, result.status, result.to_json()),
+        )
+        self.conn.commit()
+
+    def latest_safety(self, chain: str, address: str):
+        from .safety import SafetyResult
+        row = self.conn.execute(
+            """SELECT ts, status, details FROM safety_checks
+               WHERE chain = ? AND token_address = ? ORDER BY ts DESC LIMIT 1""",
+            (chain, address),
+        ).fetchone()
+        if row is None:
+            return None
+        return SafetyResult.from_json(row["status"], row["details"], row["ts"])
 
     def commit(self) -> None:
         self.conn.commit()

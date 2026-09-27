@@ -64,13 +64,21 @@ class HttpClient:
 
     def get_json(self, url: str, *, bucket: str, params: dict | None = None,
                  headers: dict | None = None) -> Any | None:
+        return self._request("GET", url, bucket=bucket, params=params, headers=headers)
+
+    def post_json(self, url: str, body: Any, *, bucket: str,
+                  headers: dict | None = None) -> Any | None:
+        return self._request("POST", url, bucket=bucket, json=body, headers=headers)
+
+    def _request(self, method: str, url: str, *, bucket: str, params: dict | None = None,
+                 headers: dict | None = None, json: Any = None) -> Any | None:
         limiter = self._limiters.get(bucket)
         attempt = 0
         while True:
             if limiter:
                 limiter.wait()
             try:
-                resp = self._client.get(url, params=params, headers=headers)
+                resp = self._client.request(method, url, params=params, headers=headers, json=json)
             except httpx.HTTPError as exc:
                 if attempt >= self.max_retries:
                     log.warning("Giving up on %s after %d tries: %s", url, attempt + 1, exc)

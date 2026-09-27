@@ -9,12 +9,13 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .scoring import FilterResult, MomentumResult
-from .models import Snapshot
+from .models import ScanRow, Snapshot
+from .safety import STATUS_FAIL, STATUS_PASS, STATUS_UNVERIFIED
 
 console = Console()
 
-Row = tuple[Snapshot, MomentumResult, FilterResult, set]
+SAFETY_LABELS = {STATUS_PASS: "[green]OK[/green]", STATUS_FAIL: "[red]FAIL[/red]",
+                 STATUS_UNVERIFIED: "[yellow]UNVER[/yellow]"}
 
 # Short labels so the table fits a normal console window.
 SIGNAL_LABELS = {
@@ -26,7 +27,9 @@ SIGNAL_LABELS = {
 LEGEND = ("[dim]Score = momentum 0-100.  Vol x = 5-min volume vs normal.\n"
           "Buys = % of 5-min trades that were buys.\n"
           "Sig: V = volume 2x+ normal, B = 60%+ buys,\n"
-          "     U = up on 5m and 1h, ! = one giant candle (score halved)[/dim]")
+          "     U = up on 5m and 1h, ! = one giant candle (score halved)\n"
+          "Safety: OK = passed all checks, UNVER = some checks couldn't be done,\n"
+          "        FAIL = failed a check, - = not checked yet[/dim]")
 
 SHORT_CHAIN = {"solana": "SOL", "ethereum": "ETH", "base": "BASE", "bnb chain": "BSC",
                "bsc": "BSC", "arbitrum": "ARB", "polygon": "POL", "avalanche": "AVAX"}
@@ -81,24 +84,30 @@ def _age(snap: Snapshot) -> str:
     return f"{a / 1440:.0f}d"
 
 
-def print_top_movers(rows: list[Row], top_n: int, only_passing: bool,
-                     stats: dict[str, int]) -> None:
-    shown = [r for r in rows if r[2].passed] if only_passing else list(rows)
-    shown.sort(key=lambda r: r[1].score, reverse=True)
+def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
+                     hide_failed: bool) -> None:
+    passing = sum(1 for r in rows if r.filters.passed)
+    failed_safety = sum(1 for r in rows if r.safety and r.safety.status == STATUS_FAIL)
+    shown = [r for r in rows if r.filters.passed] if only_passing else list(rows)
+    if hide_failed:
+        shown = [r for r in shown if not (r.safety and r.safety.status == STATUS_FAIL)]
+    shown.sort(key=lambda r: r.momentum.score, reverse=True)
     shown = shown[:top_n]
 
     title = (f"Top movers  {datetime.now():%H:%M:%S}  "
-             f"scanned {stats.get('snapshots', 0)}, "
-             f"{stats.get('passing', 0)} pass filters")
+             f"scanned {len(rows)}, {passing} pass filters"
+             + (f", {failed_safety} failed safety" + (" (hidden)" if hide_failed else "")
+                if failed_safety else ""))
 
     # (header, justify, drop priority: higher numbers are hidden first when narrow)
     columns = [("Score", "right", 0), ("Token", "left", 0), ("Chain", "left", 1),
                ("Price", "right", 7), ("5m", "right", 2), ("1h", "right", 2),
                ("Vol 5m", "right", 9), ("Vol 1h", "right", 6), ("Vol x", "right", 3),
                ("Buys", "right", 3), ("Liq", "right", 4), ("MCap", "right", 10),
-               ("Age", "right", 8), ("Sig", "left", 1)]
+               ("Age", "right", 8), ("Sig", "left", 1), ("Safety", "left", 0)]
     cells: list[list[str]] = []
-    for snap, mom, flt, feeds in shown:
+    for row in shown:
+        snap, mom, flt = row.snap, row.momentum, row.filters
         token = (snap.symbol or snap.token_address)[:10]
         if not flt.passed:
             token = f"[dim]{token}*[/dim]"
@@ -110,6 +119,7 @@ def print_top_movers(rows: list[Row], top_n: int, only_passing: bool,
             _money(snap.volume_m5), _money(snap.volume_h1), vol_x, _ratio(mom.buy_ratio_m5),
             _money(snap.liquidity_usd), _money(snap.market_cap_usd or snap.fdv_usd),
             _age(snap), "".join(sig),
+            SAFETY_LABELS.get(row.safety.status, "?") if row.safety else "[dim]-[/dim]",
         ])
 
     # Hide the least important columns until the table fits the window.
@@ -139,7 +149,24 @@ def print_top_movers(rows: list[Row], top_n: int, only_passing: bool,
         hidden = ", ".join(columns[i][0] for i in range(len(columns)) if i not in keep)
         console.print(f"[dim]Hidden to fit the window: {hidden}. "
                       f"Make the window wider to see them.[/dim]")
-    top, feeds = shown[0][0], shown[0][3]
-    seen = f" (seen in: {', '.join(sorted(feeds))})" if feeds else ""
+    _print_safety_notes(shown)
+    top = shown[0].snap
     if top.url:
-        console.print(f"[dim]#1 {top.symbol}: {top.url}{seen}[/dim]")
+        console.print(f"[dim]#1 {top.symbol}: {top.url}[/dim]")
+
+
+def _print_safety_notes(shown: list[ScanRow], limit: int = 8) -> None:
+    """One line per listed token whose safety isn't a clean pass."""
+    lines = []
+    for row in shown:
+        res = row.safety
+        if res is None or res.status == STATUS_PASS:
+            continue
+        issues = [c.detail for c in res.problems] or ["no checks could be completed"]
+        color = "red" if res.status == STATUS_FAIL else "yellow"
+        name = (row.snap.symbol or row.snap.token_address)[:10]
+        lines.append(f"[{color}]{name} {res.status}[/{color}]: " + "; ".join(issues))
+    if lines:
+        console.print("[bold]Safety notes[/bold]")
+        for line in lines[:limit]:
+            console.print("  " + line, overflow="ellipsis", no_wrap=True)

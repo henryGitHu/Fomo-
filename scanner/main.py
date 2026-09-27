@@ -15,7 +15,8 @@ from logging.handlers import RotatingFileHandler
 from . import display
 from .config import Config, ConfigError, load_config
 from .http import HttpClient
-from .models import Candidate, Snapshot, token_key
+from .models import Candidate, ScanRow, Snapshot, token_key
+from .safety.checker import SafetyChecker
 from .scoring import basic_filters, momentum_score
 from .sources.dexscreener import DexScreener
 from .sources.geckoterminal import GeckoTerminal
@@ -54,6 +55,7 @@ class Scanner:
         self.http = http
         self.dexscreener = DexScreener(cfg, http) if cfg.dexscreener.enabled else None
         self.geckoterminal = GeckoTerminal(cfg, http) if cfg.geckoterminal.enabled else None
+        self.safety = SafetyChecker(cfg, storage, http) if cfg.safety.enabled else None
         self._chain_types = {c.name: c.type for c in cfg.enabled_chains}
         self._last_prune = 0.0
 
@@ -87,14 +89,14 @@ class Scanner:
         return merged
 
     # -------------------------------------------------------------- one scan
-    def scan_once(self) -> list[display.Row]:
+    def scan_once(self) -> list[ScanRow]:
         now = time.time()
         candidates = self.discover()
         for c in candidates.values():
             self.storage.upsert_token(c.chain, c.token_address, c.symbol, c.name, c.feeds, now)
         self.storage.commit()
 
-        rows: list[display.Row] = []
+        rows: list[ScanRow] = []
         memory_since = now - self.cfg.scan.candidate_memory_minutes * 60
         cap = self.cfg.scan.max_candidates_per_chain
         for chain in self.cfg.enabled_chains:
@@ -132,18 +134,39 @@ class Scanner:
                     since=now - self.cfg.momentum.baseline_minutes * 60, before=now)
                 mom = momentum_score(snap, history, self.cfg.momentum)
                 flt = basic_filters(snap, self.cfg.filters, now)
-                rows.append((snap, mom, flt, c.feeds))
+                rows.append(ScanRow(snap, mom, flt, set(c.feeds)))
 
-        self.storage.add_snapshots([r[0] for r in rows])
+        self.storage.add_snapshots([r.snap for r in rows])
         if now - self._last_prune > PRUNE_EVERY_SECONDS:
             removed = self.storage.prune_snapshots(now - self.cfg.storage.keep_snapshots_days * 86400)
             if removed:
                 log.info("Pruned %d old snapshots", removed)
             self._last_prune = now
         self.storage.commit()
+        self.run_safety(rows, now)
         log.info("Scan done: %d candidates discovered, %d snapshots, %d pass filters",
-                 len(candidates), len(rows), sum(1 for r in rows if r[2].passed))
+                 len(candidates), len(rows), sum(1 for r in rows if r.filters.passed))
         return rows
+
+    # -------------------------------------------------------------- safety
+    def run_safety(self, rows: list[ScanRow], now: float) -> None:
+        """Attach safety results: fresh cached ones for free, then new checks
+        for the highest-momentum tokens that passed the basic filters."""
+        if self.safety is None:
+            return
+        todo: list[ScanRow] = []
+        for r in rows:
+            if not r.filters.passed:
+                continue
+            cached = self.safety.cached(r.snap.chain, r.snap.token_address, now)
+            if cached is not None:
+                r.safety = cached
+            else:
+                r.safety = self.safety.latest(r.snap.chain, r.snap.token_address)  # stale, for display
+                todo.append(r)
+        todo.sort(key=lambda r: r.momentum.score, reverse=True)
+        for r in todo[: self.cfg.safety.max_checks_per_scan]:
+            r.safety = self.safety.check(r.snap, now)
 
 
 def run(cfg: Config, once: bool, dry_run: bool) -> None:
@@ -162,7 +185,7 @@ def run(cfg: Config, once: bool, dry_run: bool) -> None:
                 rows = scanner.scan_once()
                 display.print_top_movers(
                     rows, cfg.display.top_n, cfg.display.only_passing_filters,
-                    {"snapshots": len(rows), "passing": sum(1 for r in rows if r[2].passed)})
+                    cfg.safety.enabled and cfg.safety.hide_failed)
             except Exception:
                 log.exception("Scan failed; will try again next round")
             if once:

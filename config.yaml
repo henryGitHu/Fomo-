@@ -1,0 +1,208 @@
+# =====================================================================
+#  Crypto Momentum Scanner - settings
+# =====================================================================
+#  This is the ONLY file you need to edit to change how the scanner
+#  behaves. Secrets (bot tokens, API keys) go in the separate `.env`
+#  file, never here.
+#
+#  Tips for editing:
+#   - Keep the indentation (spaces, not tabs). YAML cares about it.
+#   - Text after a # is a comment and is ignored.
+#   - true / false switch things on and off.
+#   - After saving, close and re-open run.bat for changes to take effect.
+#
+#  IMPORTANT: this tool never places trades. It only watches and reports.
+# =====================================================================
+
+
+# ---------------------------------------------------------------------
+# CHAINS - which blockchains to watch.
+# ---------------------------------------------------------------------
+# To stop watching a chain, set `enabled: false` (or delete its block).
+# To add a chain, copy a block and fill in the IDs:
+#   dexscreener_id    -> the chain name DexScreener uses in its URLs
+#                        (e.g. dexscreener.com/<dexscreener_id>/...)
+#   geckoterminal_id  -> the network name GeckoTerminal uses in its URLs
+#                        (e.g. geckoterminal.com/<geckoterminal_id>/pools/...)
+#   type              -> "solana" or "evm" (used by the safety checks
+#                        in phase 2; Ethereum-style chains are "evm")
+# Leave an ID blank ("") if that site doesn't support the chain.
+chains:
+  - name: Solana
+    enabled: true
+    type: solana
+    dexscreener_id: solana
+    geckoterminal_id: solana
+
+  - name: Ethereum
+    enabled: true
+    type: evm
+    dexscreener_id: ethereum
+    geckoterminal_id: eth
+
+  - name: Base
+    enabled: true
+    type: evm
+    dexscreener_id: base
+    geckoterminal_id: base
+
+  - name: BNB Chain
+    enabled: true
+    type: evm
+    dexscreener_id: bsc
+    geckoterminal_id: bsc
+
+  - name: Arbitrum
+    enabled: true
+    type: evm
+    dexscreener_id: arbitrum
+    geckoterminal_id: arbitrum
+
+
+# ---------------------------------------------------------------------
+# SCAN LOOP - how often and how widely to look.
+# ---------------------------------------------------------------------
+scan:
+  # Seconds to wait between scans. Each scan makes ~15-25 web requests,
+  # so going much below 60 just runs into the free rate limits.
+  interval_seconds: 90
+
+  # Most tokens to snapshot per chain in one scan. Higher = wider net,
+  # but more requests and a slower scan.
+  max_candidates_per_chain: 60
+
+  # Keep re-checking a token for this many minutes after it drops off
+  # the trending/boosted lists. This builds the price/volume history
+  # that the momentum score needs to spot acceleration.
+  candidate_memory_minutes: 120
+
+
+# ---------------------------------------------------------------------
+# DATA SOURCES - free public market-data feeds.
+# ---------------------------------------------------------------------
+sources:
+  dexscreener:
+    # Master switch for DexScreener.
+    enabled: true
+    # Tokens that someone just paid to "boost" (promote) on DexScreener.
+    use_boosts_latest: true
+    # Tokens with the most active boosts right now.
+    use_boosts_top: true
+    # Tokens that just set up a DexScreener profile (often brand new).
+    use_token_profiles: true
+    # Speed limits we stay under. DexScreener's published limits are
+    # 60/min for the boost/profile lists and 300/min for pair data.
+    # We default a bit lower to be polite. Don't raise these above
+    # the official limits.
+    requests_per_minute_discovery: 50
+    requests_per_minute_pairs: 250
+
+  geckoterminal:
+    # Master switch for GeckoTerminal.
+    enabled: true
+    # Pools GeckoTerminal marks as trending on each chain.
+    use_trending: true
+    # Newly created pools on each chain.
+    use_new_pools: true
+    # How many pages (20 pools each) to pull from each list, per chain.
+    pages: 1
+    # GeckoTerminal's free public limit is 30 requests/minute.
+    # Keep this below 30.
+    requests_per_minute: 25
+
+
+# ---------------------------------------------------------------------
+# BASIC FILTERS - tokens failing these are ignored.
+# ---------------------------------------------------------------------
+# These are the first hard gates from the spec. Phase 2 adds the
+# contract-safety checks on top.
+filters:
+  # Minimum money in the trading pool (USD). Thin pools are easy to
+  # manipulate and expensive to trade.
+  min_liquidity_usd: 25000
+  # Minimum trading volume over the last hour (USD).
+  min_volume_1h_usd: 50000
+  # Ignore pools younger than this many minutes (the first minutes of a
+  # launch are chaos and prime rug territory).
+  min_pair_age_minutes: 10
+
+
+# ---------------------------------------------------------------------
+# MOMENTUM SCORE - how "accelerating" a token looks (0-100).
+# ---------------------------------------------------------------------
+# Momentum = speeding up, not just "big". A token doing steady high
+# volume scores low; a token whose volume is suddenly jumping scores high.
+momentum:
+  # How much each part counts. They are re-scaled to add up to 1.
+  weights:
+    volume_acceleration: 0.40   # last 5 min volume vs its recent normal
+    buy_pressure: 0.30          # buys outnumbering sells
+    price_trend: 0.30           # price up over both 5 min and 1 hour
+
+  # "Recent normal" volume is averaged over this many minutes of our own
+  # stored history (falls back to DexScreener's 1h/6h figures when we
+  # don't have enough history yet).
+  baseline_minutes: 60
+  # Volume running this many times faster than normal = full marks.
+  volume_acceleration_full_score_ratio: 3.0
+
+  # Share of transactions that are buys needed for full marks
+  # (0.5 = even; 0.70 = 70% buys).
+  buy_ratio_full_score: 0.70
+
+  # 1-hour price rise (percent) that earns full marks for price trend.
+  price_change_1h_full_score_pct: 30
+
+  # "Single giant candle" guard: a pump that happened all at once is
+  # riskier than a steady climb. If the 5-minute rise is bigger than
+  # giant_candle_pct_5m, OR it makes up more than giant_candle_share_of_1h
+  # of the whole 1-hour rise, the momentum score is multiplied by
+  # giant_candle_penalty (0.5 = cut in half).
+  giant_candle_pct_5m: 25
+  giant_candle_share_of_1h: 0.8
+  giant_candle_penalty: 0.5
+
+
+# ---------------------------------------------------------------------
+# CONSOLE DISPLAY
+# ---------------------------------------------------------------------
+display:
+  # How many top movers to print after each scan.
+  top_n: 15
+  # true = only list tokens that pass the basic filters above.
+  # false = list everything (failing rows are marked).
+  only_passing_filters: true
+
+
+# ---------------------------------------------------------------------
+# STORAGE - the local database file.
+# ---------------------------------------------------------------------
+storage:
+  # Where the SQLite database lives (relative to this folder).
+  database_path: data/scanner.db
+  # Delete price snapshots older than this many days to keep the file
+  # small. (Alerts and paper-trade results are never auto-deleted.)
+  keep_snapshots_days: 14
+
+
+# ---------------------------------------------------------------------
+# NETWORK
+# ---------------------------------------------------------------------
+network:
+  # Give up on a single request after this many seconds.
+  timeout_seconds: 20
+  # Retries after a failed request (with growing waits between tries).
+  max_retries: 4
+
+
+# ---------------------------------------------------------------------
+# LOGGING
+# ---------------------------------------------------------------------
+logging:
+  # Log file location. It rotates: when it reaches max_file_mb, it is
+  # renamed and a fresh one starts, keeping backup_count old copies.
+  log_file: logs/scanner.log
+  max_file_mb: 5
+  backup_count: 5
+  # How chatty the log is: DEBUG, INFO, WARNING, or ERROR.
+  level: INFO

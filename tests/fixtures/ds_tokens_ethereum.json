@@ -1,0 +1,58 @@
+[
+ {
+  "chainId": "ethereum",
+  "dexId": "uniswap",
+  "url": "https://dexscreener.com/ethereum/0xdead0000",
+  "pairAddress": "P0xdead00000000000000",
+  "baseToken": {
+   "address": "0xdead00000000000000000000000000000000beef",
+   "name": "WHALE Token",
+   "symbol": "WHALE"
+  },
+  "quoteToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "1.87",
+  "txns": {
+   "m5": {
+    "buys": 90,
+    "sells": 40
+   },
+   "h1": {
+    "buys": 800,
+    "sells": 500
+   },
+   "h6": {
+    "buys": 4000,
+    "sells": 3500
+   },
+   "h24": {
+    "buys": 12000,
+    "sells": 11000
+   }
+  },
+  "volume": {
+   "m5": 60000,
+   "h1": 380000,
+   "h6": 1900000.0,
+   "h24": 5000000.0
+  },
+  "priceChange": {
+   "m5": 2.1,
+   "h1": 9.4,
+   "h6": 22,
+   "h24": 15
+  },
+  "liquidity": {
+   "usd": 1200000.0,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 1870000000.0,
+  "marketCap": 1683000000.0,
+  "pairCreatedAt": 1789346137633
+ }
+]

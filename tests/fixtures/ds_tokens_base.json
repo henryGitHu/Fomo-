@@ -1,0 +1,58 @@
+[
+ {
+  "chainId": "base",
+  "dexId": "aerodrome",
+  "url": "https://dexscreener.com/base/0xabc00000",
+  "pairAddress": "P0xabc000000000000000",
+  "baseToken": {
+   "address": "0xabc0000000000000000000000000000000000001",
+   "name": "BASED Token",
+   "symbol": "BASED"
+  },
+  "quoteToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "0.0312",
+  "txns": {
+   "m5": {
+    "buys": 40,
+    "sells": 60
+   },
+   "h1": {
+    "buys": 500,
+    "sells": 600
+   },
+   "h6": {
+    "buys": 3000,
+    "sells": 3000
+   },
+   "h24": {
+    "buys": 9000,
+    "sells": 9000
+   }
+  },
+  "volume": {
+   "m5": 8000,
+   "h1": 120000,
+   "h6": 500000,
+   "h24": 2000000.0
+  },
+  "priceChange": {
+   "m5": -1.5,
+   "h1": -4,
+   "h6": 10,
+   "h24": 30
+  },
+  "liquidity": {
+   "usd": 350000,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 31200000.0,
+  "marketCap": 28080000.0,
+  "pairCreatedAt": 1790306137633
+ }
+]

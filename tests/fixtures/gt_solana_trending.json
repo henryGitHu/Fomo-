@@ -1,0 +1,144 @@
+{
+ "data": [
+  {
+   "id": "solana_POOLROCKET",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "0.0042",
+    "address": "POOLROCKET",
+    "name": "ROCKET / USDC",
+    "pool_created_at": "2026-09-27T16:00:00Z",
+    "fdv_usd": "4200000.0",
+    "market_cap_usd": null,
+    "price_change_percentage": {
+     "m5": "6",
+     "h1": "18",
+     "h6": "40",
+     "h24": "120"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 170,
+      "sells": 70,
+      "buyers": 85,
+      "sellers": 35
+     },
+     "h1": {
+      "buys": 1400,
+      "sells": 900,
+      "buyers": 700,
+      "sellers": 450
+     }
+    },
+    "volume_usd": {
+     "m5": "40000",
+     "h1": "150000",
+     "h6": "400000",
+     "h24": "900000"
+    },
+    "reserve_in_usd": "200000"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "solana_7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "solana_USDC",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "raydium",
+      "type": "dex"
+     }
+    }
+   }
+  },
+  {
+   "id": "solana_POOLGTONLY",
+   "type": "pool",
+   "attributes": {
+    "base_token_price_usd": "0.5",
+    "address": "POOLGTONLY",
+    "name": "GTONLY / USDC",
+    "pool_created_at": "2026-09-20T10:00:00Z",
+    "fdv_usd": "500000000.0",
+    "market_cap_usd": null,
+    "price_change_percentage": {
+     "m5": "3",
+     "h1": "12",
+     "h6": "20",
+     "h24": "30"
+    },
+    "transactions": {
+     "m5": {
+      "buys": 60,
+      "sells": 30,
+      "buyers": 30,
+      "sellers": 15
+     },
+     "h1": {
+      "buys": 700,
+      "sells": 400,
+      "buyers": 350,
+      "sellers": 200
+     }
+    },
+    "volume_usd": {
+     "m5": "20000",
+     "h1": "90000",
+     "h6": "300000",
+     "h24": "800000"
+    },
+    "reserve_in_usd": "80000"
+   },
+   "relationships": {
+    "base_token": {
+     "data": {
+      "id": "solana_GtOnly22222222222222222222222222222222222222",
+      "type": "token"
+     }
+    },
+    "quote_token": {
+     "data": {
+      "id": "solana_USDC",
+      "type": "token"
+     }
+    },
+    "dex": {
+     "data": {
+      "id": "raydium",
+      "type": "dex"
+     }
+    }
+   }
+  }
+ ],
+ "included": [
+  {
+   "id": "solana_7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+   "type": "token",
+   "attributes": {
+    "address": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+    "name": "ROCKET Coin",
+    "symbol": "ROCKET",
+    "decimals": 9
+   }
+  },
+  {
+   "id": "solana_GtOnly22222222222222222222222222222222222222",
+   "type": "token",
+   "attributes": {
+    "address": "GtOnly22222222222222222222222222222222222222",
+    "name": "GTONLY Coin",
+    "symbol": "GTONLY",
+    "decimals": 9
+   }
+  }
+ ]
+}

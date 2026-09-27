@@ -1,0 +1,25 @@
+[
+ {
+  "url": "https://dexscreener.com/solana/7xkpump",
+  "chainId": "solana",
+  "tokenAddress": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+  "amount": 100,
+  "totalAmount": 500,
+  "icon": "x",
+  "links": []
+ },
+ {
+  "url": "https://dexscreener.com/base/0xabc",
+  "chainId": "base",
+  "tokenAddress": "0xAbC0000000000000000000000000000000000001",
+  "amount": 50,
+  "totalAmount": 50
+ },
+ {
+  "url": "https://dexscreener.com/sui/0x2",
+  "chainId": "sui",
+  "tokenAddress": "0x2::sui::SUI",
+  "amount": 10,
+  "totalAmount": 10
+ }
+]

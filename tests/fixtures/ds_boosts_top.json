@@ -1,0 +1,8 @@
+[
+ {
+  "chainId": "ethereum",
+  "tokenAddress": "0xDeaD00000000000000000000000000000000beef",
+  "amount": 30,
+  "totalAmount": 900
+ }
+]

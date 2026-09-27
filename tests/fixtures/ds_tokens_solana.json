@@ -1,0 +1,214 @@
+[
+ {
+  "chainId": "solana",
+  "dexId": "raydium",
+  "url": "https://dexscreener.com/solana/7xKXtg2CW8",
+  "pairAddress": "P7xKXtg2CW87d97TXJSDp",
+  "baseToken": {
+   "address": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+   "name": "ROCKET Token",
+   "symbol": "ROCKET"
+  },
+  "quoteToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "0.00421",
+  "txns": {
+   "m5": {
+    "buys": 180,
+    "sells": 70
+   },
+   "h1": {
+    "buys": 1500,
+    "sells": 900
+   },
+   "h6": {
+    "buys": 6000,
+    "sells": 5000
+   },
+   "h24": {
+    "buys": 20000,
+    "sells": 18000
+   }
+  },
+  "volume": {
+   "m5": 42000,
+   "h1": 160000,
+   "h6": 420000,
+   "h24": 900000
+  },
+  "priceChange": {
+   "m5": 6.2,
+   "h1": 18.5,
+   "h6": 40,
+   "h24": 120
+  },
+  "liquidity": {
+   "usd": 210000,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 4210000.0,
+  "marketCap": 3789000.0,
+  "pairCreatedAt": 1790528137633
+ },
+ {
+  "chainId": "solana",
+  "dexId": "meteora",
+  "url": "https://dexscreener.com/solana/SmallPool",
+  "pairAddress": "SmallPool",
+  "baseToken": {
+   "address": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+   "name": "ROCKET Token",
+   "symbol": "ROCKET"
+  },
+  "quoteToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "0.0042",
+  "txns": {
+   "m5": {
+    "buys": 1,
+    "sells": 1
+   },
+   "h1": {
+    "buys": 5,
+    "sells": 5
+   },
+   "h6": {
+    "buys": 9,
+    "sells": 9
+   },
+   "h24": {
+    "buys": 20,
+    "sells": 20
+   }
+  },
+  "volume": {
+   "m5": 100,
+   "h1": 2000,
+   "h6": 5000,
+   "h24": 9000
+  },
+  "priceChange": {
+   "m5": 5,
+   "h1": 17,
+   "h6": 39,
+   "h24": 110
+  },
+  "liquidity": {
+   "usd": 9000,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 4200000.0,
+  "marketCap": 3779999.9999999995,
+  "pairCreatedAt": 1790528137633
+ },
+ {
+  "chainId": "solana",
+  "dexId": "raydium",
+  "url": "https://dexscreener.com/solana/QuotePool",
+  "pairAddress": "QuotePool",
+  "baseToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "quoteToken": {
+   "address": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+   "name": "ROCKET Token",
+   "symbol": "ROCKET"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "1",
+  "txns": {
+   "m5": {
+    "buys": 1,
+    "sells": 1
+   }
+  },
+  "volume": {
+   "m5": 1,
+   "h1": 1,
+   "h6": 1,
+   "h24": 1
+  },
+  "priceChange": {
+   "m5": 0,
+   "h1": 0,
+   "h6": 0,
+   "h24": 0
+  },
+  "liquidity": {
+   "usd": 999999999,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 1000000000.0,
+  "marketCap": 900000000.0,
+  "pairCreatedAt": 1790528137633
+ },
+ {
+  "chainId": "solana",
+  "dexId": "raydium",
+  "url": "https://dexscreener.com/solana/NewTok1111",
+  "pairAddress": "PNewTok11111111111111",
+  "baseToken": {
+   "address": "NewTok1111111111111111111111111111111111pump",
+   "name": "FRESH Token",
+   "symbol": "FRESH"
+  },
+  "quoteToken": {
+   "address": "So11111111111111111111111111111111111111112",
+   "name": "Wrapped SOL",
+   "symbol": "SOL"
+  },
+  "priceNative": "0.0001",
+  "priceUsd": "1.23e-05",
+  "txns": {
+   "m5": {
+    "buys": 300,
+    "sells": 100
+   },
+   "h1": {
+    "buys": 700,
+    "sells": 200
+   },
+   "h6": {
+    "buys": 700,
+    "sells": 200
+   },
+   "h24": {
+    "buys": 700,
+    "sells": 200
+   }
+  },
+  "volume": {
+   "m5": 30000,
+   "h1": 70000,
+   "h6": 70000,
+   "h24": 70000
+  },
+  "priceChange": {
+   "m5": 35,
+   "h1": 60,
+   "h6": 60,
+   "h24": 60
+  },
+  "liquidity": {
+   "usd": 40000,
+   "base": 1,
+   "quote": 1
+  },
+  "fdv": 12300.0,
+  "marketCap": 11070.0,
+  "pairCreatedAt": 1790544637633
+ }
+]

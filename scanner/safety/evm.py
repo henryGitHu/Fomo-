@@ -60,6 +60,8 @@ class EvmSafetyChecker:
         self.http = http
         http.add_bucket(BUCKET_GOPLUS, cfg.goplus_requests_per_minute)
         http.add_bucket(BUCKET_HONEYPOT, cfg.honeypot_is_requests_per_minute)
+        # Chains honeypot.is told us it doesn't support; not asked again this run.
+        self._honeypot_unsupported: set[int] = set()
 
     def check(self, snap: Snapshot, chain_id: int | None) -> tuple[list[SafetyCheck], list[str]]:
         if not chain_id:
@@ -87,9 +89,19 @@ class EvmSafetyChecker:
         return entry if isinstance(entry, dict) and entry else None
 
     def fetch_honeypot_is(self, chain_id: int, addr: str) -> dict | None:
-        data = self.http.get_json(HONEYPOT_URL, bucket=BUCKET_HONEYPOT,
-                                  params={"address": addr, "chainID": chain_id})
-        return data if isinstance(data, dict) and ("honeypotResult" in data or "simulationResult" in data) else None
+        if chain_id in self._honeypot_unsupported:
+            return None
+        # 404 = honeypot.is has no pool for this token; 400 = bad/unsupported
+        # chain. Both are normal answers - GoPlus still covers the token.
+        status, data = self.http.get_json_status(
+            HONEYPOT_URL, bucket=BUCKET_HONEYPOT,
+            params={"address": addr, "chainID": chain_id}, expected=(400, 404))
+        if status == 400 and "chain" in str((data or {}).get("error", "")).lower():
+            log.info("honeypot.is doesn't support chain %s; using GoPlus only for it", chain_id)
+            self._honeypot_unsupported.add(chain_id)
+            return None
+        return data if status == 200 and isinstance(data, dict) and (
+            "honeypotResult" in data or "simulationResult" in data) else None
 
     # ------------------------------------------------------------ evaluate
     def evaluate(self, gp: dict | None, hp: dict | None, snap: Snapshot) -> list[SafetyCheck]:

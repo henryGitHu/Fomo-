@@ -64,14 +64,24 @@ class HttpClient:
 
     def get_json(self, url: str, *, bucket: str, params: dict | None = None,
                  headers: dict | None = None) -> Any | None:
-        return self._request("GET", url, bucket=bucket, params=params, headers=headers)
+        return self._request("GET", url, bucket=bucket, params=params, headers=headers)[1]
+
+    def get_json_status(self, url: str, *, bucket: str, params: dict | None = None,
+                        headers: dict | None = None, expected: tuple[int, ...] = ()
+                        ) -> tuple[int | None, Any | None]:
+        """Like get_json, but also returns the HTTP status (None = network failure).
+        Statuses in `expected` are normal answers ("not found") and are only
+        logged quietly; their JSON body is returned too."""
+        return self._request("GET", url, bucket=bucket, params=params, headers=headers,
+                             expected=expected)
 
     def post_json(self, url: str, body: Any, *, bucket: str,
                   headers: dict | None = None) -> Any | None:
-        return self._request("POST", url, bucket=bucket, json=body, headers=headers)
+        return self._request("POST", url, bucket=bucket, json=body, headers=headers)[1]
 
     def _request(self, method: str, url: str, *, bucket: str, params: dict | None = None,
-                 headers: dict | None = None, json: Any = None) -> Any | None:
+                 headers: dict | None = None, json: Any = None,
+                 expected: tuple[int, ...] = ()) -> tuple[int | None, Any | None]:
         limiter = self._limiters.get(bucket)
         attempt = 0
         while True:
@@ -82,7 +92,7 @@ class HttpClient:
             except httpx.HTTPError as exc:
                 if attempt >= self.max_retries:
                     log.warning("Giving up on %s after %d tries: %s", url, attempt + 1, exc)
-                    return None
+                    return None, None
                 delay = _backoff(attempt)
                 log.info("Network error on %s (%s); retrying in %.1fs", url, exc, delay)
                 time.sleep(delay)
@@ -91,16 +101,24 @@ class HttpClient:
 
             if resp.status_code == 200:
                 try:
-                    return resp.json()
+                    return 200, resp.json()
                 except ValueError:
                     log.warning("Non-JSON response from %s", url)
-                    return None
+                    return 200, None
+
+            if resp.status_code in expected:
+                log.info("HTTP %s from %s: %s", resp.status_code, url,
+                         resp.text[:200].replace("\n", " "))
+                try:
+                    return resp.status_code, resp.json()
+                except ValueError:
+                    return resp.status_code, None
 
             retryable = resp.status_code == 429 or resp.status_code >= 500
             if not retryable or attempt >= self.max_retries:
                 log.warning("HTTP %s from %s (giving up): %s", resp.status_code, url,
                             resp.text[:200].replace("\n", " "))
-                return None
+                return resp.status_code, None
 
             delay = _retry_after(resp) or _backoff(attempt)
             if resp.status_code == 429:

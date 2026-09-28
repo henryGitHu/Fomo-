@@ -289,3 +289,25 @@ def test_max_checks_per_scan(cfg, tmp_path):
             HttpClient(max_retries=0, transport=httpx.MockTransport(handler))).scan_once()
     # Exactly one token checked (rugcheck + rpc fallback, or goplus + honeypot.is).
     assert len(calls) <= 2
+
+
+def test_honeypot_is_not_found_and_unsupported_chain_are_quiet(cfg, tmp_path, caplog):
+    calls = []
+
+    def handler(request):
+        url = str(request.url)
+        calls.append(url)
+        if "gopluslabs" in url:
+            return httpx.Response(200, json=GOOD_GOPLUS)
+        if "chainID=8453" in url:
+            return httpx.Response(400, json={"code": 400, "error": "Invalid chain"})
+        return httpx.Response(404, json={"code": 404, "error": "pair not found"})
+
+    sc = SafetyChecker(cfg, Storage(tmp_path / "s.db"),
+                       HttpClient(max_retries=0, transport=httpx.MockTransport(handler)))
+    caplog.set_level("INFO")
+    r1 = sc.check(evm_snap())
+    r2 = sc.check(evm_snap())
+    assert r1.status == r2.status == STATUS_PASS          # GoPlus alone is enough
+    assert sum("honeypot.is" in c for c in calls) == 1     # unsupported chain remembered
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]

@@ -34,9 +34,12 @@ class SafetyChecker:
         """Latest stored result, if it's still fresh."""
         now = now or time.time()
         res = self.storage.latest_safety(chain, address)
-        if res and now - res.checked_at < self._ttl(res.status):
+        if res and self.is_fresh(res, now):
             return res
         return None
+
+    def is_fresh(self, result: SafetyResult, now: float | None = None) -> bool:
+        return (now or time.time()) - result.checked_at < self._ttl(result.status)
 
     def latest(self, chain: str, address: str) -> SafetyResult | None:
         """Latest stored result, even if stale (for display)."""

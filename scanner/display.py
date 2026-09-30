@@ -24,7 +24,8 @@ SIGNAL_LABELS = {
     "price_uptrend": "U",
     "giant_candle": "[red]![/red]",
 }
-LEGEND = ("[dim]Score = momentum 0-100.  Vol x = 5-min volume vs normal.\n"
+LEGEND = ("[dim]Score = combined score 0-100 (alerts fire at your threshold). Mom = momentum only.\n"
+          "Vol x = 5-min volume vs normal.\n"
           "Buys = % of 5-min trades that were buys.\n"
           "Sig: V = volume 2x+ normal, B = 60%+ buys,\n"
           "     U = up on 5m and 1h, ! = one giant candle (score halved)\n"
@@ -91,7 +92,7 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
     shown = [r for r in rows if r.filters.passed] if only_passing else list(rows)
     if hide_failed:
         shown = [r for r in shown if not (r.safety and r.safety.status == STATUS_FAIL)]
-    shown.sort(key=lambda r: r.momentum.score, reverse=True)
+    shown.sort(key=_score, reverse=True)
     shown = shown[:top_n]
 
     title = (f"Top movers  {datetime.now():%H:%M:%S}  "
@@ -100,7 +101,7 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
                 if failed_safety else ""))
 
     # (header, justify, drop priority: higher numbers are hidden first when narrow)
-    columns = [("Score", "right", 0), ("Token", "left", 0), ("Chain", "left", 1),
+    columns = [("Score", "right", 0), ("Mom", "right", 11), ("Token", "left", 0), ("Chain", "left", 1),
                ("Price", "right", 7), ("5m", "right", 2), ("1h", "right", 2),
                ("Vol 5m", "right", 9), ("Vol 1h", "right", 6), ("Vol x", "right", 3),
                ("Buys", "right", 3), ("Liq", "right", 4), ("MCap", "right", 10),
@@ -114,7 +115,8 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
         sig = [SIGNAL_LABELS.get(x, x) for x in mom.signals]
         vol_x = "-" if mom.volume_ratio is None else f"{mom.volume_ratio:.1f}x"
         cells.append([
-            f"[bold]{mom.score:.0f}[/bold]", token, _short_chain(snap.chain), _price(snap.price_usd),
+            f"[bold]{_score(row):.0f}[/bold]", f"{mom.score:.0f}", token, _short_chain(snap.chain),
+            _price(snap.price_usd),
             _pct(snap.price_change_m5), _pct(snap.price_change_h1),
             _money(snap.volume_m5), _money(snap.volume_h1), vol_x, _ratio(mom.buy_ratio_m5),
             _money(snap.liquidity_usd), _money(snap.market_cap_usd or snap.fdv_usd),
@@ -153,6 +155,10 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
     top = shown[0].snap
     if top.url:
         console.print(f"[dim]#1 {top.symbol}: {top.url}[/dim]")
+
+
+def _score(row: ScanRow) -> float:
+    return row.composite.score if row.composite is not None else row.momentum.score
 
 
 def _print_safety_notes(shown: list[ScanRow], limit: int = 8) -> None:

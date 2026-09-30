@@ -151,3 +151,88 @@ def basic_filters(snap: Snapshot, f: Filters, now: float | None = None) -> Filte
     elif age < f.min_pair_age_minutes:
         reasons.append(f"pair age {age:.0f}m < {f.min_pair_age_minutes:.0f}m")
     return FilterResult(passed=not reasons, reasons=reasons)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: composite score
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CompositeResult:
+    score: float                       # 0-100; 0 when safety FAILED
+    parts: dict[str, float | None]     # momentum / social / safety (None = not available)
+    risk: str                          # LOW / MEDIUM / HIGH
+    risk_reasons: list[str] = field(default_factory=list)
+
+
+def safety_margin(snap: Snapshot, safety, cfg) -> float | None:
+    """0-100: how comfortably the token cleared the safety gates.
+
+    Averages whatever measurements exist: liquidity (10x the minimum = full
+    marks), top-10 holder share, tax and LP-locked share. None if unchecked."""
+    import math
+    from .safety import STATUS_FAIL, STATUS_UNVERIFIED
+
+    if safety is None:
+        return None
+    if safety.status == STATUS_FAIL:
+        return 0.0
+    comps: list[float] = []
+    min_liq = cfg.filters.min_liquidity_usd
+    if snap.liquidity_usd and min_liq > 0:
+        comps.append(_clamp01(math.log10(max(snap.liquidity_usd / min_liq, 1e-9))))
+    values = {c.name: c.value for c in safety.checks if c.value is not None and c.status == "pass"}
+    limit = cfg.safety.max_top10_holders_pct
+    if "top10_holders" in values and limit > 0:
+        comps.append(_clamp01((limit - values["top10_holders"]) / limit))
+    tax_limit = max(cfg.safety.evm.max_buy_tax_pct, cfg.safety.evm.max_sell_tax_pct)
+    if "taxes" in values and tax_limit > 0:
+        comps.append(_clamp01((tax_limit - values["taxes"]) / tax_limit))
+    if "lp_locked" in values:
+        comps.append(_clamp01(values["lp_locked"] / 100.0))
+    margin = (sum(comps) / len(comps) * 100) if comps else 50.0
+    if safety.status == STATUS_UNVERIFIED:
+        margin *= cfg.scoring.unverified_safety_multiplier
+    return round(margin, 1)
+
+
+def risk_level(snap: Snapshot, safety, now: float | None = None) -> tuple[str, list[str]]:
+    from .safety import STATUS_PASS
+
+    high, medium = [], []
+    if safety is None or safety.status != STATUS_PASS:
+        high.append("safety not fully verified")
+    liq = snap.liquidity_usd or 0
+    if liq < 50_000:
+        high.append("thin liquidity")
+    elif liq < 250_000:
+        medium.append("modest liquidity")
+    age = snap.age_minutes(now)
+    if age is not None and age < 60:
+        high.append("pool under 1 hour old")
+    elif age is not None and age < 24 * 60:
+        medium.append("pool under 1 day old")
+    mcap = snap.market_cap_usd or snap.fdv_usd
+    if mcap is not None and mcap < 1_000_000:
+        medium.append("micro cap")
+    if high:
+        return "HIGH", high + medium
+    if medium:
+        return "MEDIUM", medium
+    return "LOW", []
+
+
+def composite_score(snap: Snapshot, momentum: MomentumResult, safety, cfg,
+                    social: float | None = None, now: float | None = None) -> CompositeResult:
+    from .safety import STATUS_FAIL
+
+    margin = safety_margin(snap, safety, cfg)
+    parts = {"momentum": momentum.score, "social": social, "safety": margin}
+    w = cfg.scoring.weights
+    used = {k: w[k] for k, v in parts.items() if v is not None and w[k] > 0}
+    total_w = sum(used.values())
+    score = sum(parts[k] * wt for k, wt in used.items()) / total_w if total_w else 0.0
+    if safety is not None and safety.status == STATUS_FAIL:
+        score = 0.0
+    risk, reasons = risk_level(snap, safety, now)
+    return CompositeResult(score=round(score, 1), parts=parts, risk=risk, risk_reasons=reasons)

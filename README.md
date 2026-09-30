@@ -7,14 +7,14 @@ sellers, and price rising steadily rather than in one spike.
 > **It never trades.** It only watches and reports. You decide what to do,
 > and you place any trade yourself.
 
-## What works so far (phases 1–2 of 6)
+## What works so far (phases 1–3 of 6)
 
 | Phase | What it adds | Status |
 |---|---|---|
 | 1 | Settings, database, DexScreener + GeckoTerminal data, console list of top movers | **Done** |
 | 2 | Safety checks (Solana mint/freeze authority, EVM honeypot/tax checks) | **Done** |
-| 3 | Combined score + Telegram phone alerts with suggested trades | Next |
-| 4 | Paper-trade tracking + `report.bat` performance report | Planned |
+| 3 | Combined score + Telegram phone alerts with suggested trades | **Done** |
+| 4 | Paper-trade tracking + `report.bat` performance report | Next |
 | 5 | Reddit mention tracking | Planned |
 | 6 | Telegram channel mention tracking | Planned |
 
@@ -31,7 +31,10 @@ Right now, every scan does this:
    under $50k volume in the last hour, or less than 10 minutes old).
 5. Runs **safety checks** on the highest-momentum tokens that passed the
    filters (details below), and hides any that fail.
-6. Prints the highest-momentum tokens in a table, with a Safety column.
+6. Works out a **combined score** (momentum + safety margin, plus social
+   buzz from phase 5 on) and prints the top tokens in a table.
+7. Sends a **phone alert** when a token's combined score reaches 70, with a
+   suggested trade. Tokens that failed safety are never alerted.
 
 ---
 
@@ -44,7 +47,54 @@ Right now, every scan does this:
    `.venv` folder, installs what the scanner needs, creates your `.env`
    secrets file, and checks `config.yaml`. Wait for "Setup complete".
 
-That's all phases 1 and 2 need. You don't need any accounts or API keys.
+That's all the scanner itself needs. Phone alerts need a free Telegram bot;
+see **Phone alerts** below.
+
+## Phone alerts (Telegram)
+
+One-time setup, about 2 minutes:
+
+1. In Telegram, open **@BotFather** (blue checkmark) and send `/newbot`. Pick a
+   name, then a username ending in `bot`.
+2. BotFather replies with a **token** like `123456789:AAH...`. Keep it private.
+3. Open your new bot's chat, press **Start**, and send it any message.
+4. In your browser, open
+   `https://api.telegram.org/botYOUR_TOKEN/getUpdates`, with your token in
+   place of `YOUR_TOKEN`. Note that it's **bot** followed straight by the token.
+   Find `"chat":{"id":` followed by a number. That number is your **chat ID**.
+5. Open `.env` in Notepad (right-click, **Open with**, **Notepad**) and fill in:
+   ```
+   TELEGRAM_BOT_TOKEN=123456789:AAH...
+   TELEGRAM_CHAT_ID=987654321
+   ```
+6. Double-click **`test-alert.bat`**. You should get a test message on your
+   phone. If not, it tells you in plain English what to fix.
+
+Optional Discord: in a channel's settings, go to **Integrations**, then
+**Webhooks**, then **New Webhook**. Copy the URL into `.env` as
+`DISCORD_WEBHOOK_URL=...` and set `alerts.discord: true` in `config.yaml`.
+
+**What an alert contains:** token, chain, contract address, price, 5m/1h
+change, volume, liquidity, market cap, age, buy/sell ratio, social trend,
+every safety result, the score breakdown, a risk level (LOW, MEDIUM or HIGH,
+with reasons), and a DexScreener link.
+
+**Suggested trade** (a suggestion only; the tool never trades): entry at the
+current price, take-profit +15%, stop-loss −8%, and a $50 size. It also
+estimates round-trip costs: fees of about 1%, plus slippage estimated from
+the pool's liquidity. If those costs would eat more than half the
+take-profit gain, the alert warns you.
+
+**When alerts fire:**
+- The combined score must reach `alerts.score_threshold` (default 70).
+- The token must pass safety. UNVERIFIED tokens can alert, clearly marked,
+  unless you set `send_unverified: false`.
+- Each token then has a 60-minute cooldown, unless its score jumps 15 or
+  more points again.
+- At most 3 alerts are sent per scan.
+
+All of these are in the `scoring:`, `alerts:` and `trade:` sections of
+`config.yaml`.
 
 ## Running it
 
@@ -53,7 +103,8 @@ That's all phases 1 and 2 need. You don't need any accounts or API keys.
 - To do one scan and stop, open a Command Prompt in this folder and type
   `run.bat --once`.
 - `run.bat --dry-run` prints alerts in the window instead of sending them to
-  your phone. This matters from phase 3 onward, when alerts exist.
+  your phone. It's handy for trying out new settings. Alerts are still saved
+  for the paper-trade report.
 
 If the internet or a data source goes down, the scanner logs the problem and
 tries again on the next scan. It won't crash.
@@ -68,7 +119,8 @@ tries again on the next scan. It won't crash.
 
 | Column | Meaning |
 |---|---|
-| Score | Momentum, 0–100. Higher means accelerating harder. |
+| Score | Combined score, 0–100. Alerts fire when it reaches your threshold. |
+| Mom | Momentum alone, 0–100. Higher means accelerating harder. Hidden first in narrow windows. |
 | 5m / 1h | Price change over the last 5 minutes / 1 hour |
 | Vol 5m / Vol 1h | Dollar volume traded in the last 5 minutes / 1 hour |
 | Vol x | Last 5 minutes of volume compared with its normal pace. `3.9x` means almost 4× faster than usual. |
@@ -148,8 +200,7 @@ Common changes:
 If you make a mistake in the file, the scanner stops at startup and tells
 you which setting to fix, in plain English.
 
-Secrets such as bot tokens go in **`.env`**, never in `config.yaml`. Phases 1
-and 2 don't use any secrets.
+Secrets such as bot tokens go in **`.env`**, never in `config.yaml`.
 
 ## Where things are stored
 

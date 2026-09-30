@@ -99,7 +99,11 @@ CREATE TABLE IF NOT EXISTS alerts (
     position_usd     REAL,
     est_cost_pct     REAL,
     message          TEXT,
-    delivered        INTEGER DEFAULT 0
+    delivered        INTEGER DEFAULT 0,
+    pair_address     TEXT,
+    liquidity_usd    REAL,
+    risk             TEXT,
+    dry_run          INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_token_ts ON alerts (chain, token_address, ts);
 
@@ -119,6 +123,15 @@ CREATE TABLE IF NOT EXISTS outcomes (
 
 _SNAPSHOT_COLS = [f.name for f in fields(Snapshot)]
 
+# Columns added after a table was first released: (table, column, type).
+# Older databases get them added automatically on startup.
+_MIGRATIONS = [
+    ("alerts", "pair_address", "TEXT"),
+    ("alerts", "liquidity_usd", "REAL"),
+    ("alerts", "risk", "TEXT"),
+    ("alerts", "dry_run", "INTEGER DEFAULT 0"),
+]
+
 
 class Storage:
     def __init__(self, path: Path | str):
@@ -130,7 +143,14 @@ class Storage:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        for table, column, ctype in _MIGRATIONS:
+            existing = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ctype}")
 
     def close(self) -> None:
         self.conn.close()
@@ -204,3 +224,24 @@ class Storage:
 
     def commit(self) -> None:
         self.conn.commit()
+
+    # ------------------------------------------------------------------ alerts
+    def add_alert(self, **values) -> int:
+        cols = list(values)
+        cur = self.conn.execute(
+            f"INSERT INTO alerts ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",
+            [values[c] for c in cols],
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def mark_delivered(self, alert_id: int) -> None:
+        self.conn.execute("UPDATE alerts SET delivered = 1 WHERE id = ?", (alert_id,))
+        self.conn.commit()
+
+    def last_alert(self, chain: str, address: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """SELECT * FROM alerts WHERE chain = ? AND token_address = ?
+               ORDER BY ts DESC LIMIT 1""",
+            (chain, address),
+        ).fetchone()

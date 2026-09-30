@@ -34,6 +34,7 @@ class SafetyCheck:
     status: str          # pass / fail / unknown
     detail: str          # plain-English explanation
     optional: bool = False
+    value: float | None = None   # the measured number (holder %, tax %, LP-locked %), if any
 
 
 @dataclass

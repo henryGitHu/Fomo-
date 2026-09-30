@@ -2,7 +2,8 @@
 
     python -m scanner.main            run until closed
     python -m scanner.main --once     one scan, then exit
-    python -m scanner.main --dry-run  print alerts instead of sending (phase 3+)
+    python -m scanner.main --dry-run  print alerts instead of sending them
+    python -m scanner.main --test-alert  send one test message and exit
 """
 from __future__ import annotations
 
@@ -13,11 +14,12 @@ import time
 from logging.handlers import RotatingFileHandler
 
 from . import display
+from .alerts import AlertManager, AlertSender
 from .config import Config, ConfigError, load_config
-from .http import HttpClient
+from .http import HttpClient, RedactingFilter
 from .models import Candidate, ScanRow, Snapshot, token_key
 from .safety.checker import SafetyChecker
-from .scoring import basic_filters, momentum_score
+from .scoring import basic_filters, composite_score, momentum_score
 from .sources.dexscreener import DexScreener
 from .sources.geckoterminal import GeckoTerminal
 from .storage import Storage
@@ -45,17 +47,20 @@ def setup_logging(cfg: Config) -> None:
     console.setLevel(logging.WARNING)
     console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     root.addHandler(console)
+    for h in root.handlers:
+        h.addFilter(RedactingFilter())
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class Scanner:
-    def __init__(self, cfg: Config, storage: Storage, http: HttpClient):
+    def __init__(self, cfg: Config, storage: Storage, http: HttpClient, dry_run: bool = False):
         self.cfg = cfg
         self.storage = storage
         self.http = http
         self.dexscreener = DexScreener(cfg, http) if cfg.dexscreener.enabled else None
         self.geckoterminal = GeckoTerminal(cfg, http) if cfg.geckoterminal.enabled else None
         self.safety = SafetyChecker(cfg, storage, http) if cfg.safety.enabled else None
+        self.alerts = AlertManager(cfg, storage, http, dry_run, self.safety)
         self._chain_types = {c.name: c.type for c in cfg.enabled_chains}
         self._last_prune = 0.0
 
@@ -144,6 +149,12 @@ class Scanner:
             self._last_prune = now
         self.storage.commit()
         self.run_safety(rows, now)
+        for r in rows:
+            r.composite = composite_score(r.snap, r.momentum, r.safety, self.cfg, social=None, now=now)
+        try:
+            self.alerts.process(rows, now)
+        except Exception:  # an alert problem must never stop the scanner
+            log.exception("Alert processing failed")
         log.info("Scan done: %d candidates discovered, %d snapshots, %d pass filters",
                  len(candidates), len(rows), sum(1 for r in rows if r.filters.passed))
         return rows
@@ -172,12 +183,16 @@ class Scanner:
 def run(cfg: Config, once: bool, dry_run: bool) -> None:
     storage = Storage(cfg.storage.database_path)
     http = HttpClient(timeout=cfg.network.timeout_seconds, max_retries=cfg.network.max_retries)
-    scanner = Scanner(cfg, storage, http)
+    scanner = Scanner(cfg, storage, http, dry_run=dry_run)
     chains = ", ".join(c.name for c in cfg.enabled_chains)
     display.console.print(f"[bold]Crypto Momentum Scanner[/bold] - watching: {chains}"
                           + ("  [yellow](dry run)[/yellow]" if dry_run else ""))
     display.console.print("[dim]This tool never trades. Press Ctrl+C to stop.[/dim]")
     log.info("Starting scanner (chains: %s, dry_run=%s)", chains, dry_run)
+    if not dry_run:
+        for problem in scanner.alerts.sender.setup_problems():
+            display.console.print(f"[yellow]Alert setup: {problem}. Alerts will be shown "
+                                  f"in this window instead.[/yellow]")
     try:
         while True:
             started = time.time()
@@ -206,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="run a single scan and exit")
     parser.add_argument("--dry-run", action="store_true",
                         help="print alerts to the console instead of sending them")
+    parser.add_argument("--test-alert", action="store_true",
+                        help="send one test message to Telegram/Discord and exit")
     parser.add_argument("--config", help="path to config.yaml (default: the one next to run.bat)")
     args = parser.parse_args(argv)
     try:
@@ -214,8 +231,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SETTINGS PROBLEM: {exc}", file=sys.stderr)
         return 2
     setup_logging(cfg)
+    if args.test_alert:
+        return send_test_alert(cfg)
     run(cfg, once=args.once, dry_run=args.dry_run)
     return 0
+
+
+def send_test_alert(cfg: Config) -> int:
+    http = HttpClient(timeout=cfg.network.timeout_seconds, max_retries=1)
+    try:
+        results = AlertSender(cfg, http, dry_run=False).send_test()
+    finally:
+        http.close()
+    for line in results or ["Nothing to test - no alert channel is set up."]:
+        color = "green" if "sent" in line else "red"
+        display.console.print(f"[{color}]{line}[/{color}]")
+    return 0 if any("sent" in line for line in results) else 1
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import threading
 import time
 from typing import Any
@@ -20,6 +21,33 @@ import httpx
 log = logging.getLogger(__name__)
 
 USER_AGENT = "crypto-momentum-scanner/0.1 (personal, non-commercial)"
+
+# Secrets that can appear inside URLs (Telegram bot token, Discord webhook
+# token). They're masked before anything is written to the console or log.
+_SECRET_PATTERNS = [
+    (re.compile(r"/bot\d+:[A-Za-z0-9_-]+"), "/bot<hidden>"),
+    (re.compile(r"/webhooks/\d+/[A-Za-z0-9_-]+"), "/webhooks/<hidden>"),
+]
+
+
+def redact(text: str) -> str:
+    for pattern, repl in _SECRET_PATTERNS:
+        text = pattern.sub(repl, text)
+    return text
+
+
+class RedactingFilter(logging.Filter):
+    """Masks secrets in any log record, whoever wrote it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact(record.getMessage())
+        record.args = None
+        return True
+
+
+# httpx logs every request URL at INFO; those URLs can carry the bot token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 class RateLimiter:
@@ -75,6 +103,11 @@ class HttpClient:
         return self._request("GET", url, bucket=bucket, params=params, headers=headers,
                              expected=expected)
 
+    def post_json_status(self, url: str, body: Any, *, bucket: str, headers: dict | None = None,
+                         expected: tuple[int, ...] = ()) -> tuple[int | None, Any | None]:
+        return self._request("POST", url, bucket=bucket, json=body, headers=headers,
+                             expected=expected)
+
     def post_json(self, url: str, body: Any, *, bucket: str,
                   headers: dict | None = None) -> Any | None:
         return self._request("POST", url, bucket=bucket, json=body, headers=headers)[1]
@@ -91,23 +124,25 @@ class HttpClient:
                 resp = self._client.request(method, url, params=params, headers=headers, json=json)
             except httpx.HTTPError as exc:
                 if attempt >= self.max_retries:
-                    log.warning("Giving up on %s after %d tries: %s", url, attempt + 1, exc)
+                    log.warning("Giving up on %s after %d tries: %s", redact(url), attempt + 1, redact(str(exc)))
                     return None, None
                 delay = _backoff(attempt)
-                log.info("Network error on %s (%s); retrying in %.1fs", url, exc, delay)
+                log.info("Network error on %s (%s); retrying in %.1fs", redact(url), redact(str(exc)), delay)
                 time.sleep(delay)
                 attempt += 1
                 continue
 
-            if resp.status_code == 200:
+            if 200 <= resp.status_code < 300:
+                if resp.status_code == 204 or not resp.content:
+                    return resp.status_code, None
                 try:
-                    return 200, resp.json()
+                    return resp.status_code, resp.json()
                 except ValueError:
-                    log.warning("Non-JSON response from %s", url)
-                    return 200, None
+                    log.warning("Non-JSON response from %s", redact(url))
+                    return resp.status_code, None
 
             if resp.status_code in expected:
-                log.info("HTTP %s from %s: %s", resp.status_code, url,
+                log.info("HTTP %s from %s: %s", resp.status_code, redact(url),
                          resp.text[:200].replace("\n", " "))
                 try:
                     return resp.status_code, resp.json()
@@ -116,17 +151,17 @@ class HttpClient:
 
             retryable = resp.status_code == 429 or resp.status_code >= 500
             if not retryable or attempt >= self.max_retries:
-                log.warning("HTTP %s from %s (giving up): %s", resp.status_code, url,
+                log.warning("HTTP %s from %s (giving up): %s", resp.status_code, redact(url),
                             resp.text[:200].replace("\n", " "))
                 return resp.status_code, None
 
             delay = _retry_after(resp) or _backoff(attempt)
             if resp.status_code == 429:
-                log.info("Rate-limited by %s; backing off %.1fs", url, delay)
+                log.info("Rate-limited by %s; backing off %.1fs", redact(url), delay)
                 if limiter:
                     limiter.penalize(delay)
             else:
-                log.info("HTTP %s from %s; retrying in %.1fs", resp.status_code, url, delay)
+                log.info("HTTP %s from %s; retrying in %.1fs", resp.status_code, redact(url), delay)
             time.sleep(delay)
             attempt += 1
 

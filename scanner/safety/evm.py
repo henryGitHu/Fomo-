@@ -153,8 +153,8 @@ class EvmSafetyChecker:
         text = f"Buy tax {buy:.1f}%, sell tax {sell:.1f}%"
         if buy > self.cfg.max_buy_tax_pct or sell > self.cfg.max_sell_tax_pct:
             return SafetyCheck("taxes", FAIL, f"{text} (limit {self.cfg.max_buy_tax_pct:.0f}%/"
-                                              f"{self.cfg.max_sell_tax_pct:.0f}%)")
-        return SafetyCheck("taxes", PASS, text)
+                                              f"{self.cfg.max_sell_tax_pct:.0f}%)", value=max(buy, sell))
+        return SafetyCheck("taxes", PASS, text, value=max(buy, sell))
 
     def _open_source(self, gp) -> SafetyCheck:
         f = _flag(gp or {}, "is_open_source")
@@ -198,5 +198,6 @@ class EvmSafetyChecker:
         if total > self.max_top10_pct:
             return SafetyCheck("top10_holders", FAIL,
                                f"Top 10 wallets hold {total:.0f}% (limit {self.max_top10_pct:.0f}%)",
-                               optional=True)
-        return SafetyCheck("top10_holders", PASS, f"Top 10 wallets hold {total:.0f}%", optional=True)
+                               optional=True, value=total)
+        return SafetyCheck("top10_holders", PASS, f"Top 10 wallets hold {total:.0f}%", optional=True,
+                           value=total)

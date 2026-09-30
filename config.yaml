@@ -235,6 +235,62 @@ momentum:
 
 
 # ---------------------------------------------------------------------
+# COMBINED SCORE (0-100) - what decides whether you get an alert.
+# ---------------------------------------------------------------------
+scoring:
+  # How much each part counts. They are re-scaled to add up to 1.
+  # "social" (Reddit/Telegram buzz) arrives in phases 5-6. Until a social
+  # source is switched on, its weight is simply left out.
+  weights:
+    momentum: 0.60   # the momentum score above
+    social: 0.20     # how fast mentions are accelerating
+    safety: 0.20     # how comfortably the token cleared the safety gates
+  # Tokens marked UNVERIFIED get their safety part multiplied by this
+  # (0.5 = counts half), so they need stronger momentum to alert.
+  unverified_safety_multiplier: 0.5
+
+
+# ---------------------------------------------------------------------
+# ALERTS - messages to your phone (Telegram) and/or Discord.
+# ---------------------------------------------------------------------
+# Tokens that FAIL safety are never alerted, whatever their score.
+alerts:
+  # Send an alert when the combined score reaches this (0-100).
+  score_threshold: 70
+  # After alerting on a token, stay quiet about it for this many minutes...
+  cooldown_minutes: 60
+  # ...unless its score rises by at least this many points again.
+  realert_score_jump: 15
+  # true = also alert on UNVERIFIED tokens (clearly marked as such).
+  # false = only alert on tokens that passed every safety check.
+  send_unverified: true
+  # Most alerts to send in one scan (the highest scores go first).
+  max_alerts_per_scan: 3
+  # Where to send them. Telegram needs TELEGRAM_BOT_TOKEN and
+  # TELEGRAM_CHAT_ID in .env; Discord needs DISCORD_WEBHOOK_URL.
+  telegram: true
+  discord: false
+
+
+# ---------------------------------------------------------------------
+# SUGGESTED TRADE - included in every alert. Only a suggestion: this
+# tool never places trades.
+# ---------------------------------------------------------------------
+trade:
+  # Suggested position size in US dollars.
+  position_usd: 50
+  # Take profit this many percent above the entry price.
+  take_profit_pct: 15
+  # Stop loss this many percent below the entry price.
+  stop_loss_pct: 8
+  # Assumed exchange + network fees for buying AND selling, in percent.
+  round_trip_fee_pct: 1.0
+  # Warn in the alert when estimated costs (fees + slippage) would eat
+  # more than this percent of the take-profit gain.
+  warn_if_costs_exceed_pct_of_tp: 50
+
+
+# ---------------------------------------------------------------------
 # CONSOLE DISPLAY
 # ---------------------------------------------------------------------
 display:

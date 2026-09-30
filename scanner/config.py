@@ -115,6 +115,32 @@ class SafetySettings:
 
 
 @dataclass
+class ScoringSettings:
+    weights: dict[str, float]
+    unverified_safety_multiplier: float
+
+
+@dataclass
+class AlertSettings:
+    score_threshold: float
+    cooldown_minutes: int
+    realert_score_jump: float
+    send_unverified: bool
+    max_alerts_per_scan: int
+    telegram: bool
+    discord: bool
+
+
+@dataclass
+class TradeSettings:
+    position_usd: float
+    take_profit_pct: float
+    stop_loss_pct: float
+    round_trip_fee_pct: float
+    warn_if_costs_exceed_pct_of_tp: float
+
+
+@dataclass
 class MomentumSettings:
     weights: dict[str, float]
     baseline_minutes: int
@@ -161,6 +187,9 @@ class Config:
     filters: Filters
     safety: SafetySettings
     momentum: MomentumSettings
+    scoring: ScoringSettings
+    alerts: AlertSettings
+    trade: TradeSettings
     display: DisplaySettings
     storage: StorageSettings
     network: NetworkSettings
@@ -293,6 +322,9 @@ def load_config(config_path: Path | str | None = None,
     saf_sol = _section(saf, "solana")
     saf_evm = _section(saf, "evm")
     mom = _section(raw, "momentum")
+    sco = _section(raw, "scoring")
+    alr = _section(raw, "alerts")
+    trd = _section(raw, "trade")
     disp = _section(raw, "display")
     sto = _section(raw, "storage")
     net = _section(raw, "network")
@@ -306,6 +338,14 @@ def load_config(config_path: Path | str | None = None,
                for k in expected_weights}
     if sum(weights.values()) <= 0:
         raise ConfigError("'momentum.weights' can't all be zero.")
+
+    sw_raw = sco.get("weights")
+    if not isinstance(sw_raw, dict):
+        raise ConfigError("'scoring.weights' must list: momentum, social, safety")
+    score_weights = {k: _get(sw_raw, "scoring.weights", k, float, minimum=0)
+                     for k in ("momentum", "social", "safety")}
+    if score_weights["momentum"] + score_weights["safety"] <= 0:
+        raise ConfigError("'scoring.weights' for momentum and safety can't both be zero.")
 
     level = _get(log, "logging", "level", str).upper()
     if level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
@@ -375,6 +415,26 @@ def load_config(config_path: Path | str | None = None,
             giant_candle_pct_5m=_get(mom, "momentum", "giant_candle_pct_5m", float, minimum=0),
             giant_candle_share_of_1h=_get(mom, "momentum", "giant_candle_share_of_1h", float, minimum=0, maximum=1),
             giant_candle_penalty=_get(mom, "momentum", "giant_candle_penalty", float, minimum=0, maximum=1),
+        ),
+        scoring=ScoringSettings(
+            weights=score_weights,
+            unverified_safety_multiplier=_get(sco, "scoring", "unverified_safety_multiplier", float, minimum=0, maximum=1),
+        ),
+        alerts=AlertSettings(
+            score_threshold=_get(alr, "alerts", "score_threshold", float, minimum=0, maximum=100),
+            cooldown_minutes=_get(alr, "alerts", "cooldown_minutes", int, minimum=0),
+            realert_score_jump=_get(alr, "alerts", "realert_score_jump", float, minimum=0, maximum=100),
+            send_unverified=_get(alr, "alerts", "send_unverified", bool),
+            max_alerts_per_scan=_get(alr, "alerts", "max_alerts_per_scan", int, minimum=1, maximum=50),
+            telegram=_get(alr, "alerts", "telegram", bool),
+            discord=_get(alr, "alerts", "discord", bool),
+        ),
+        trade=TradeSettings(
+            position_usd=_get(trd, "trade", "position_usd", float, minimum=1),
+            take_profit_pct=_get(trd, "trade", "take_profit_pct", float, minimum=0.1, maximum=10000),
+            stop_loss_pct=_get(trd, "trade", "stop_loss_pct", float, minimum=0.1, maximum=99),
+            round_trip_fee_pct=_get(trd, "trade", "round_trip_fee_pct", float, minimum=0, maximum=50),
+            warn_if_costs_exceed_pct_of_tp=_get(trd, "trade", "warn_if_costs_exceed_pct_of_tp", float, minimum=0, maximum=100),
         ),
         display=DisplaySettings(
             top_n=_get(disp, "display", "top_n", int, minimum=1),

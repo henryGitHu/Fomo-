@@ -84,3 +84,4 @@ class ScanRow:
     filters: "object"             # scoring.FilterResult
     feeds: set[str] = field(default_factory=set)
     safety: "object | None" = None  # safety.SafetyResult, None = not checked yet
+    composite: "object | None" = None  # scoring.CompositeResult (phase 3)

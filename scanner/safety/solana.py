@@ -126,7 +126,7 @@ class SolanaSafetyChecker:
             return SafetyCheck("lp_locked", PASS, "LP lock check turned off", optional=True)
         if snap.dex and any(b in snap.dex.lower() for b in BONDING_CURVE_MARKETS):
             return SafetyCheck("lp_locked", PASS,
-                               "Still on a bonding curve (no LP that can be pulled)", optional=True)
+                               "Still on a bonding curve (no LP that can be pulled)", optional=True, value=100.0)
         markets = [m for m in (r.get("markets") or []) if isinstance(m, dict)]
         if not markets:
             return SafetyCheck("lp_locked", UNKNOWN, "LP lock: no market data", optional=True)
@@ -141,15 +141,15 @@ class SolanaSafetyChecker:
         mtype = str(market.get("marketType", "")).lower()
         if any(b in mtype for b in BONDING_CURVE_MARKETS) and "amm" not in mtype:
             return SafetyCheck("lp_locked", PASS,
-                               "Still on a bonding curve (no LP that can be pulled)", optional=True)
+                               "Still on a bonding curve (no LP that can be pulled)", optional=True, value=100.0)
         pct = to_float((market.get("lp") or {}).get("lpLockedPct"))
         if pct is None:
             return SafetyCheck("lp_locked", UNKNOWN, "LP lock: not reported", optional=True)
         if pct < self.cfg.min_lp_locked_pct:
             return SafetyCheck("lp_locked", FAIL,
                                f"Only {pct:.0f}% of LP burned/locked (need {self.cfg.min_lp_locked_pct:.0f}%) "
-                               f"- liquidity could be pulled", optional=True)
-        return SafetyCheck("lp_locked", PASS, f"{pct:.0f}% of LP burned/locked", optional=True)
+                               f"- liquidity could be pulled", optional=True, value=pct)
+        return SafetyCheck("lp_locked", PASS, f"{pct:.0f}% of LP burned/locked", optional=True, value=pct)
 
     def _holder_check(self, r: dict) -> SafetyCheck:
         holders = r.get("topHolders")
@@ -173,5 +173,6 @@ class SolanaSafetyChecker:
         if total > self.max_top10_pct:
             return SafetyCheck("top10_holders", FAIL,
                                f"Top 10 wallets hold {total:.0f}% (limit {self.max_top10_pct:.0f}%)",
-                               optional=True)
-        return SafetyCheck("top10_holders", PASS, f"Top 10 wallets hold {total:.0f}%", optional=True)
+                               optional=True, value=total)
+        return SafetyCheck("top10_holders", PASS, f"Top 10 wallets hold {total:.0f}%", optional=True,
+                           value=total)

@@ -3,3 +3,4 @@ PyYAML>=6.0
 python-dotenv>=1.0
 rich>=13.0
 matplotlib>=3.7
+telethon>=1.36

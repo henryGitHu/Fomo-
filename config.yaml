@@ -118,6 +118,56 @@ sources:
 
 
 # ---------------------------------------------------------------------
+# TELEGRAM CHANNELS - social buzz from public Telegram channels.
+# ---------------------------------------------------------------------
+# Reads public channels/groups through Telegram's official API, logged in
+# as YOUR account (read-only - it never posts). One-time setup:
+#   1. Put TELEGRAM_API_ID and TELEGRAM_API_HASH in .env (see README).
+#   2. Add channels below.
+#   3. Double-click telegram-login.bat and log in with your phone number.
+#   4. Set enabled: true and restart run.bat.
+telegram_channels:
+  enabled: false
+  # Public channel or group usernames (the part after t.me/), one per line
+  # with a dash in front, e.g.:
+  #   - somechannel
+  #   - https://t.me/anotherchannel
+  # Only add channels you'd trust to read - many crypto channels are paid
+  # shills, which is exactly why mentions are de-duplicated and weighted.
+  channels: []
+  # How often to check the channels for new messages (seconds).
+  poll_every_seconds: 120
+  # Most messages to read per channel each time.
+  messages_per_poll: 200
+
+
+# ---------------------------------------------------------------------
+# SOCIAL SCORE - how Telegram mentions turn into a 0-100 "buzz" score.
+# ---------------------------------------------------------------------
+social:
+  # "Recent" window: mentions in the last this-many minutes...
+  recent_minutes: 30
+  # ...compared with the normal rate over this many hours before that.
+  baseline_hours: 6
+  # Mentions running this many times faster than normal = full marks.
+  full_score_acceleration: 4
+  # Mentioned by this many different channels/people = full breadth marks.
+  full_score_sources: 3
+  # A ticker-only match ($XYZ without a contract address) counts this much
+  # (tickers collide constantly; an address match counts 1.0).
+  ticker_only_weight: 0.3
+  # Down-weight posts from accounts younger than this many days, where the
+  # source tells us account age (Telegram does not; kept for future sources).
+  new_account_days: 30
+  new_account_weight: 0.3
+  # Tickers never matched on their own (too common / not momentum tokens).
+  ignore_tickers: [BTC, ETH, SOL, BNB, USDT, USDC, DAI, XRP, ADA, DOGE, TRX,
+                   TON, ARB, OP, MATIC, POL, AVAX, LINK, CA, DEX, CEO, USD]
+  # Delete stored mentions older than this many days.
+  keep_mentions_days: 7
+
+
+# ---------------------------------------------------------------------
 # BASIC FILTERS - tokens failing these are ignored.
 # ---------------------------------------------------------------------
 # These are the first hard gates from the spec. Phase 2 adds the

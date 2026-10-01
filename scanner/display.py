@@ -29,6 +29,7 @@ LEGEND = ("[dim]Score = combined score 0-100 (alerts fire at your threshold). Mo
           "Buys = % of 5-min trades that were buys.\n"
           "Sig: V = volume 2x+ normal, B = 60%+ buys,\n"
           "     U = up on 5m and 1h, ! = one giant candle (score halved)\n"
+          "Soc = Telegram buzz 0-100 (- = no mentions or Telegram not set up)\n"
           "Safety: OK = passed all checks, UNVER = some checks couldn't be done,\n"
           "        FAIL = failed a check, - = not checked yet[/dim]")
 
@@ -105,7 +106,7 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
                ("Price", "right", 7), ("5m", "right", 2), ("1h", "right", 2),
                ("Vol 5m", "right", 9), ("Vol 1h", "right", 6), ("Vol x", "right", 3),
                ("Buys", "right", 3), ("Liq", "right", 4), ("MCap", "right", 10),
-               ("Age", "right", 8), ("Sig", "left", 1), ("Safety", "left", 0)]
+               ("Age", "right", 8), ("Soc", "right", 5), ("Sig", "left", 1), ("Safety", "left", 0)]
     cells: list[list[str]] = []
     for row in shown:
         snap, mom, flt = row.snap, row.momentum, row.filters
@@ -120,7 +121,7 @@ def print_top_movers(rows: list[ScanRow], top_n: int, only_passing: bool,
             _pct(snap.price_change_m5), _pct(snap.price_change_h1),
             _money(snap.volume_m5), _money(snap.volume_h1), vol_x, _ratio(mom.buy_ratio_m5),
             _money(snap.liquidity_usd), _money(snap.market_cap_usd or snap.fdv_usd),
-            _age(snap), "".join(sig),
+            _age(snap), "-" if row.social is None else f"{row.social.score:.0f}", "".join(sig),
             SAFETY_LABELS.get(row.safety.status, "?") if row.safety else "[dim]-[/dim]",
         ])
 

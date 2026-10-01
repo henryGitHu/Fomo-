@@ -129,8 +129,13 @@ def format_alert(row: ScanRow, trade: TradeSuggestion | None, cfg: Config) -> st
     if s.buys_m5 is not None and s.sells_m5 is not None:
         ratio = f" ({mom.buy_ratio_m5 * 100:.0f}% buys)" if mom.buy_ratio_m5 is not None else ""
         lines.append(f"Buys/sells 5m: {s.buys_m5}/{s.sells_m5}{ratio}")
-    social = comp.parts.get("social")
-    lines.append("Social: " + ("not tracked yet" if social is None else f"{social:.0f}/100"))
+    if row.social is not None:
+        chans = ", ".join(row.social.channels[:3])
+        lines.append("Social: " + e(row.social.describe(cfg.social.recent_minutes))
+                     + (f" ({e(chans)})" if chans else ""))
+    else:
+        lines.append("Social: no Telegram mentions" if cfg.telegram_channels.enabled
+                     else "Social: not tracked (Telegram channels off)")
     if mom.signals:
         lines.append("Signals: " + ", ".join(SIGNAL_TEXT.get(x, x) for x in mom.signals))
 
@@ -354,6 +359,8 @@ class AlertManager:
             trade = suggest_trade(row.snap, self.cfg.trade)
             text = format_alert(row, trade, self.cfg)
             signals = list(row.momentum.signals) + sorted(row.feeds) + [f"safety_{row.safety.status.lower()}"]
+            if row.social is not None and row.social.score >= 50:
+                signals.append("social_buzz")
             alert_id = self.storage.add_alert(
                 ts=now, chain=row.snap.chain, token_address=row.snap.token_address,
                 symbol=row.snap.symbol, score=row.composite.score,

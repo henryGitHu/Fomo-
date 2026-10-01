@@ -6,6 +6,7 @@ setting that needs fixing, so a non-programmer can correct config.yaml.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,27 @@ class GeckoTerminalSettings:
     use_new_pools: bool
     pages: int
     requests_per_minute: int
+
+
+@dataclass
+class TelegramChannelSettings:
+    enabled: bool
+    channels: list[str]
+    poll_every_seconds: int
+    messages_per_poll: int
+
+
+@dataclass
+class SocialSettings:
+    recent_minutes: int
+    baseline_hours: float
+    full_score_acceleration: float
+    full_score_sources: int
+    ticker_only_weight: float
+    new_account_days: float
+    new_account_weight: float
+    ignore_tickers: list[str]
+    keep_mentions_days: int
 
 
 @dataclass
@@ -195,6 +217,8 @@ class Config:
     scan: ScanSettings
     dexscreener: DexScreenerSettings
     geckoterminal: GeckoTerminalSettings
+    telegram_channels: TelegramChannelSettings
+    social: SocialSettings
     filters: Filters
     safety: SafetySettings
     momentum: MomentumSettings
@@ -329,7 +353,21 @@ def load_config(config_path: Path | str | None = None,
     sources = _section(raw, "sources")
     ds = _section(sources, "dexscreener")
     gt = _section(sources, "geckoterminal")
+    tgc = _section(raw, "telegram_channels")
+    soc = _section(raw, "social")
     flt = _section(raw, "filters")
+    channels_raw = tgc.get("channels") or []
+    if not isinstance(channels_raw, list):
+        raise ConfigError("'telegram_channels.channels' must be a list (each line starting with '- ').")
+    channels = []
+    for ch in channels_raw:
+        name = str(ch or "").strip()
+        name = re.sub(r"^(https?://)?(www\.)?(t|telegram)\.me/", "", name).strip("/@ ")
+        if name:
+            channels.append(name)
+    ignore_raw = soc.get("ignore_tickers") or []
+    if not isinstance(ignore_raw, list):
+        raise ConfigError("'social.ignore_tickers' must be a list like [BTC, ETH].")
     saf = _section(raw, "safety")
     saf_sol = _section(saf, "solana")
     saf_evm = _section(saf, "evm")
@@ -392,6 +430,23 @@ def load_config(config_path: Path | str | None = None,
             use_new_pools=_get(gt, "sources.geckoterminal", "use_new_pools", bool),
             pages=_get(gt, "sources.geckoterminal", "pages", int, minimum=1, maximum=10),
             requests_per_minute=_get(gt, "sources.geckoterminal", "requests_per_minute", int, minimum=1, maximum=30),
+        ),
+        telegram_channels=TelegramChannelSettings(
+            enabled=_get(tgc, "telegram_channels", "enabled", bool),
+            channels=channels,
+            poll_every_seconds=_get(tgc, "telegram_channels", "poll_every_seconds", int, minimum=30),
+            messages_per_poll=_get(tgc, "telegram_channels", "messages_per_poll", int, minimum=10, maximum=1000),
+        ),
+        social=SocialSettings(
+            recent_minutes=_get(soc, "social", "recent_minutes", int, minimum=5, maximum=240),
+            baseline_hours=_get(soc, "social", "baseline_hours", float, minimum=0.5, maximum=72),
+            full_score_acceleration=_get(soc, "social", "full_score_acceleration", float, minimum=1.1),
+            full_score_sources=_get(soc, "social", "full_score_sources", int, minimum=1),
+            ticker_only_weight=_get(soc, "social", "ticker_only_weight", float, minimum=0, maximum=1),
+            new_account_days=_get(soc, "social", "new_account_days", float, minimum=0),
+            new_account_weight=_get(soc, "social", "new_account_weight", float, minimum=0, maximum=1),
+            ignore_tickers=[str(t).upper().lstrip("$") for t in ignore_raw],
+            keep_mentions_days=_get(soc, "social", "keep_mentions_days", int, minimum=1),
         ),
         filters=Filters(
             min_liquidity_usd=_get(flt, "filters", "min_liquidity_usd", float, minimum=0),

@@ -21,6 +21,8 @@ from .http import HttpClient, RedactingFilter
 from .models import Candidate, ScanRow, Snapshot, token_key
 from .safety.checker import SafetyChecker
 from .scoring import basic_filters, composite_score, momentum_score
+from .social import SocialIndex
+from .sources.telegram import TelegramSource
 from .sources.dexscreener import DexScreener
 from .sources.geckoterminal import GeckoTerminal
 from .storage import Storage
@@ -66,6 +68,9 @@ class Scanner:
         self.alerts = AlertManager(cfg, storage, http, dry_run, self.safety)
         self.tracker = Tracker(cfg, storage, self.dexscreener)
         self.summaries = Summaries(cfg, storage, self.alerts.sender)
+        self.telegram = (TelegramSource(cfg, storage)
+                         if cfg.telegram_channels.enabled and cfg.telegram_channels.channels else None)
+        self._telegram_tried = False
         self._chain_types = {c.name: c.type for c in cfg.enabled_chains}
         self._last_prune = 0.0
 
@@ -149,13 +154,16 @@ class Scanner:
         self.storage.add_snapshots([r.snap for r in rows])
         if now - self._last_prune > PRUNE_EVERY_SECONDS:
             removed = self.storage.prune_snapshots(now - self.cfg.storage.keep_snapshots_days * 86400)
+            self.storage.prune_mentions(now - self.cfg.social.keep_mentions_days * 86400)
             if removed:
                 log.info("Pruned %d old snapshots", removed)
             self._last_prune = now
         self.storage.commit()
         self.run_safety(rows, now)
+        self.run_social(rows, now)
         for r in rows:
-            r.composite = composite_score(r.snap, r.momentum, r.safety, self.cfg, social=None, now=now)
+            r.composite = composite_score(r.snap, r.momentum, r.safety, self.cfg,
+                                          social=r.social.score if r.social else None, now=now)
         try:
             self.alerts.process(rows, now)
         except Exception:  # an alert problem must never stop the scanner
@@ -171,6 +179,34 @@ class Scanner:
         log.info("Scan done: %d candidates discovered, %d snapshots, %d pass filters",
                  len(candidates), len(rows), sum(1 for r in rows if r.filters.passed))
         return rows
+
+    # -------------------------------------------------------------- social
+    def social_active(self) -> bool:
+        return self.telegram is not None and self.telegram.ready
+
+    def run_social(self, rows: list[ScanRow], now: float) -> None:
+        """Read new Telegram messages, then score each token's buzz."""
+        if self.telegram is None:
+            return
+        if not self._telegram_tried:
+            self._telegram_tried = True
+            self.telegram.connect()
+        if not self.telegram.ready:
+            return
+        try:
+            stored = self.telegram.poll(now)
+            if stored:
+                log.info("Telegram: stored %d new mentions", stored)
+        except Exception:
+            log.exception("Telegram polling failed")
+        s = self.cfg.social
+        window = s.recent_minutes * 60 + s.baseline_hours * 3600
+        index = SocialIndex(self.storage.mentions_since(now - window), now, s)
+        types = {c.name: c.type for c in self.cfg.enabled_chains}
+        for r in rows:
+            keys = {token_key(types.get(r.snap.chain, "evm"), r.snap.token_address),
+                    (r.snap.pair_address or "").lower(), r.snap.pair_address or ""}
+            r.social = index.score({k for k in keys if k}, r.snap.symbol)
 
     # -------------------------------------------------------------- safety
     def run_safety(self, rows: list[ScanRow], now: float) -> None:
@@ -225,6 +261,8 @@ def run(cfg: Config, once: bool, dry_run: bool) -> None:
         display.console.print("\nStopped.")
     finally:
         log.info("Scanner stopped")
+        if scanner.telegram is not None:
+            scanner.telegram.close()
         http.close()
         storage.close()
 

@@ -7,7 +7,7 @@ sellers, and price rising steadily rather than in one spike.
 > **It never trades.** It only watches and reports. You decide what to do,
 > and you place any trade yourself.
 
-## What works so far (phases 1–4 of 6)
+## What works so far (all 6 phases)
 
 | Phase | What it adds | Status |
 |---|---|---|
@@ -15,8 +15,8 @@ sellers, and price rising steadily rather than in one spike.
 | 2 | Safety checks (Solana mint/freeze authority, EVM honeypot/tax checks) | **Done** |
 | 3 | Combined score + Telegram phone alerts with suggested trades | **Done** |
 | 4 | Paper-trade tracking + `report.bat` performance report | **Done** |
-| 5 | Reddit mention tracking | Next |
-| 6 | Telegram channel mention tracking | Planned |
+| 5 | Reddit mention tracking | **Skipped**: Reddit now requires manual approval for all API access (see below) |
+| 6 | Telegram channel mention tracking | **Done** (optional; needs a one-time login) |
 
 Right now, every scan does this:
 
@@ -184,6 +184,62 @@ momentum first. Results are remembered: 60 minutes for OK, 6 hours for FAIL,
 while it works through the list.
 
 All thresholds are in the `safety:` section of `config.yaml`.
+
+## Social buzz from Telegram channels (optional)
+
+The scanner can read public Telegram channels and groups that you choose,
+and turn mentions into a **social score (0–100)** that feeds the combined
+score. It logs in as **your** Telegram account through Telegram's official
+API and only reads; it never posts.
+
+**How mentions are counted:**
+- **Contract addresses** count fully. A **$TICKER** on its own counts only
+  30%, because tickers collide constantly.
+- **Shill filtering:** a copy-pasted message counts once however many times
+  it's posted, and each person or channel counts once per window.
+  (Telegram doesn't reveal account age, so the "new account" filter can't
+  apply to Telegram.)
+- The score rewards **acceleration** (mentions in the last 30 minutes
+  compared with the previous 6 hours) and **breadth** (how many different
+  sources). A token that's always talked about doesn't score high just for
+  being popular.
+- Tokens nobody mentions are scored on momentum and safety alone, so turning
+  this on never hides a strong token.
+
+**Setup (about 5 minutes):**
+1. Go to <https://my.telegram.org> and log in with your phone number. The
+   code arrives in your Telegram app.
+2. Click **API development tools** and fill in the form. Any app title and
+   short name will do, for example "My Scanner" and "myscanner". Leave the
+   URL blank. Click **Create application**.
+3. Copy **App api_id** (a number) and **App api_hash** (a long code) into
+   `.env`:
+   ```
+   TELEGRAM_API_ID=1234567
+   TELEGRAM_API_HASH=0123456789abcdef0123456789abcdef
+   ```
+   The api_hash is like a password and **can't be reset**, so never share it.
+4. In `config.yaml`, under `telegram_channels:`, add the public channels to
+   watch (the part after `t.me/`), one per line:
+   ```
+   channels:
+     - somechannel
+     - anotherchannel
+   ```
+5. Double-click **`telegram-login.bat`**. Enter your phone number with its
+   country code, then the code Telegram sends you (and your 2-step password,
+   if you have one). It then checks that each channel can be read.
+6. Set `telegram_channels.enabled: true` and restart `run.bat`. A **Soc**
+   column appears in the table, and alerts show the mention trend.
+
+The login is saved in `data\telegram.session`. Anyone with that file can
+use your Telegram account, so don't share it. To log out, delete it.
+
+**Reddit (phase 5) is not included.** Since November 2025, Reddit requires
+every new API user, even for personal projects, to apply and be approved by
+hand, and small projects are often refused. Per this project's rules we
+skip sources that need approval rather than work around them. If Reddit
+ever approves you, Reddit support can be added.
 
 ## Scheduled summaries (Telegram)
 

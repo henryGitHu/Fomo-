@@ -120,7 +120,7 @@ def test_alert_message_contents(cfg):
     row = make_row(cfg)
     text = format_alert(row, suggest_trade(row.snap, cfg.trade), cfg)
     for needle in ("HOT", "Solana", "Mint111", "Price", "5m", "1h", "Volume", "Liquidity",
-                   "Buys/sells", "Social: not tracked yet", "Mint authority revoked",
+                   "Buys/sells", "Social: not tracked (Telegram channels off)", "Mint authority revoked",
                    "Score breakdown", "Risk", "Suggested trade", "Take profit", "Stop loss",
                    "Size $50", "Est. costs", "dexscreener.com"):
         assert needle in text, needle

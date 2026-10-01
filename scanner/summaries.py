@@ -92,8 +92,9 @@ class Summaries:
             name = e(s.symbol or s.token_address[:8])
             link = f' · <a href="{e(s.url, quote=True)}">chart</a>' if s.url else ""
             lines.append(f"{i}. <b>{name}</b> ({e(s.chain)}) · score <b>{r.composite.score:.0f}</b> · {safety}")
+            social = f" · buzz {r.social.score:.0f}" if r.social is not None else ""
             lines.append(f"    1h {_pct(s.price_change_h1)} · 5m {_pct(s.price_change_m5)} · "
-                         f"liq {_money(s.liquidity_usd)} · risk {r.composite.risk}{link}")
+                         f"liq {_money(s.liquidity_usd)} · risk {r.composite.risk}{social}{link}")
         alerts = self.storage.alerts_since(now - self.cfg.summaries.digest_every_minutes * 60)
         open_trades = sum(1 for r in self.storage.alerts_with_outcomes(now - 5 * 3600)
                           if r["hit"] in (None, HIT_OPEN))

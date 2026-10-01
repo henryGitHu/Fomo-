@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS mentions (
 );
 CREATE INDEX IF NOT EXISTS idx_mentions_token_ts ON mentions (chain, token_address, ts);
 CREATE INDEX IF NOT EXISTS idx_mentions_ticker_ts ON mentions (ticker, ts);
+CREATE INDEX IF NOT EXISTS idx_mentions_ts ON mentions (ts);
 
 CREATE TABLE IF NOT EXISTS alerts (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -320,3 +321,21 @@ class Storage:
 
     def alerts_since(self, since: float) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM alerts WHERE ts >= ?", (since,)).fetchone()[0]
+
+    # ------------------------------------------------------------------ mentions
+    def add_mentions(self, rows: list[dict]) -> None:
+        if not rows:
+            return
+        cols = ["ts", "source", "channel", "author", "author_age_days", "chain",
+                "token_address", "ticker", "match_type", "text_hash", "url"]
+        self.conn.executemany(
+            f"INSERT INTO mentions ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",
+            [tuple(r.get(c) for c in cols) for r in rows],
+        )
+        self.conn.commit()
+
+    def mentions_since(self, since: float) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM mentions WHERE ts > ?", (since,)).fetchall()
+
+    def prune_mentions(self, older_than: float) -> int:
+        return self.conn.execute("DELETE FROM mentions WHERE ts < ?", (older_than,)).rowcount

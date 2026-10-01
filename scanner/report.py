@@ -35,6 +35,7 @@ SIGNAL_NAMES = {
     "ds_profile": "Seen: new DexScreener profile", "gt_trending": "Seen: GeckoTerminal trending",
     "gt_new": "Seen: GeckoTerminal new pool",
     "safety_pass": "Safety PASSED", "safety_unverified": "Safety UNVERIFIED",
+    "social_buzz": "Telegram buzz (social 50+)",
 }
 
 

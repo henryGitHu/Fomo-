@@ -85,3 +85,4 @@ class ScanRow:
     feeds: set[str] = field(default_factory=set)
     safety: "object | None" = None  # safety.SafetyResult, None = not checked yet
     composite: "object | None" = None  # scoring.CompositeResult (phase 3)
+    social: "object | None" = None     # social.SocialResult, None = no mentions / no social source

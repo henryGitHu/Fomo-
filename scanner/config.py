@@ -121,7 +121,18 @@ class ScoringSettings:
 
 
 @dataclass
+class SummarySettings:
+    digest: bool
+    digest_every_minutes: int
+    digest_top_n: int
+    pnl_chart: bool
+    pnl_every_hours: float
+    pnl_daily_time: str   # "HH:MM" or ""
+
+
+@dataclass
 class AlertSettings:
+    instant: bool
     score_threshold: float
     cooldown_minutes: int
     realert_score_jump: float
@@ -189,6 +200,7 @@ class Config:
     momentum: MomentumSettings
     scoring: ScoringSettings
     alerts: AlertSettings
+    summaries: SummarySettings
     trade: TradeSettings
     display: DisplaySettings
     storage: StorageSettings
@@ -325,6 +337,14 @@ def load_config(config_path: Path | str | None = None,
     sco = _section(raw, "scoring")
     alr = _section(raw, "alerts")
     trd = _section(raw, "trade")
+    smr = _section(raw, "summaries")
+    daily_time = _get(smr, "summaries", "pnl_daily_time", str)
+    if daily_time:
+        import re as _re
+        m = _re.fullmatch(r"(\d{1,2}):(\d{2})", daily_time)
+        if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+            raise ConfigError("'summaries.pnl_daily_time' must look like \"21:00\" (or \"\" for off).")
+        daily_time = f"{int(m.group(1)):02d}:{m.group(2)}"
     disp = _section(raw, "display")
     sto = _section(raw, "storage")
     net = _section(raw, "network")
@@ -421,6 +441,7 @@ def load_config(config_path: Path | str | None = None,
             unverified_safety_multiplier=_get(sco, "scoring", "unverified_safety_multiplier", float, minimum=0, maximum=1),
         ),
         alerts=AlertSettings(
+            instant=_get(alr, "alerts", "instant", bool),
             score_threshold=_get(alr, "alerts", "score_threshold", float, minimum=0, maximum=100),
             cooldown_minutes=_get(alr, "alerts", "cooldown_minutes", int, minimum=0),
             realert_score_jump=_get(alr, "alerts", "realert_score_jump", float, minimum=0, maximum=100),
@@ -428,6 +449,14 @@ def load_config(config_path: Path | str | None = None,
             max_alerts_per_scan=_get(alr, "alerts", "max_alerts_per_scan", int, minimum=1, maximum=50),
             telegram=_get(alr, "alerts", "telegram", bool),
             discord=_get(alr, "alerts", "discord", bool),
+        ),
+        summaries=SummarySettings(
+            digest=_get(smr, "summaries", "digest", bool),
+            digest_every_minutes=_get(smr, "summaries", "digest_every_minutes", int, minimum=10),
+            digest_top_n=_get(smr, "summaries", "digest_top_n", int, minimum=1, maximum=20),
+            pnl_chart=_get(smr, "summaries", "pnl_chart", bool),
+            pnl_every_hours=_get(smr, "summaries", "pnl_every_hours", float, minimum=0.25),
+            pnl_daily_time=daily_time,
         ),
         trade=TradeSettings(
             position_usd=_get(trd, "trade", "position_usd", float, minimum=1),

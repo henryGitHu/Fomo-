@@ -108,20 +108,27 @@ class HttpClient:
         return self._request("POST", url, bucket=bucket, json=body, headers=headers,
                              expected=expected)
 
+    def post_multipart_status(self, url: str, data: dict, files: dict, *, bucket: str,
+                              expected: tuple[int, ...] = ()) -> tuple[int | None, Any | None]:
+        """POST form fields + file uploads (used to send chart images)."""
+        return self._request("POST", url, bucket=bucket, data=data, files=files, expected=expected)
+
     def post_json(self, url: str, body: Any, *, bucket: str,
                   headers: dict | None = None) -> Any | None:
         return self._request("POST", url, bucket=bucket, json=body, headers=headers)[1]
 
     def _request(self, method: str, url: str, *, bucket: str, params: dict | None = None,
                  headers: dict | None = None, json: Any = None,
-                 expected: tuple[int, ...] = ()) -> tuple[int | None, Any | None]:
+                 expected: tuple[int, ...] = (), data: dict | None = None,
+                 files: dict | None = None) -> tuple[int | None, Any | None]:
         limiter = self._limiters.get(bucket)
         attempt = 0
         while True:
             if limiter:
                 limiter.wait()
             try:
-                resp = self._client.request(method, url, params=params, headers=headers, json=json)
+                resp = self._client.request(method, url, params=params, headers=headers, json=json,
+                                            data=data, files=files)
             except httpx.HTTPError as exc:
                 if attempt >= self.max_retries:
                     log.warning("Giving up on %s after %d tries: %s", redact(url), attempt + 1, redact(str(exc)))

@@ -4,6 +4,7 @@
     python -m scanner.main --once     one scan, then exit
     python -m scanner.main --dry-run  print alerts instead of sending them
     python -m scanner.main --test-alert  send one test message and exit
+    python -m scanner.main --send-pnl    send today's paper-trade chart now and exit
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from .scoring import basic_filters, composite_score, momentum_score
 from .sources.dexscreener import DexScreener
 from .sources.geckoterminal import GeckoTerminal
 from .storage import Storage
+from .summaries import Summaries
 from .tracker import Tracker
 
 log = logging.getLogger("scanner")
@@ -63,6 +65,7 @@ class Scanner:
         self.safety = SafetyChecker(cfg, storage, http) if cfg.safety.enabled else None
         self.alerts = AlertManager(cfg, storage, http, dry_run, self.safety)
         self.tracker = Tracker(cfg, storage, self.dexscreener)
+        self.summaries = Summaries(cfg, storage, self.alerts.sender)
         self._chain_types = {c.name: c.type for c in cfg.enabled_chains}
         self._last_prune = 0.0
 
@@ -161,6 +164,10 @@ class Scanner:
             self.tracker.update(now)
         except Exception:
             log.exception("Paper-trade tracking failed")
+        try:
+            self.summaries.maybe_send(rows, now)
+        except Exception:
+            log.exception("Scheduled summary failed")
         log.info("Scan done: %d candidates discovered, %d snapshots, %d pass filters",
                  len(candidates), len(rows), sum(1 for r in rows if r.filters.passed))
         return rows
@@ -229,6 +236,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="print alerts to the console instead of sending them")
     parser.add_argument("--test-alert", action="store_true",
                         help="send one test message to Telegram/Discord and exit")
+    parser.add_argument("--send-pnl", action="store_true",
+                        help="send today's paper-trade P&L chart now and exit")
     parser.add_argument("--config", help="path to config.yaml (default: the one next to run.bat)")
     args = parser.parse_args(argv)
     try:
@@ -239,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging(cfg)
     if args.test_alert:
         return send_test_alert(cfg)
+    if args.send_pnl:
+        return send_pnl_now(cfg, dry_run=args.dry_run)
     run(cfg, once=args.once, dry_run=args.dry_run)
     return 0
 
@@ -257,3 +268,19 @@ def send_test_alert(cfg: Config) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def send_pnl_now(cfg: Config, dry_run: bool = False) -> int:
+    from .summaries import CHART_PATH
+    storage = Storage(cfg.storage.database_path)
+    http = HttpClient(timeout=cfg.network.timeout_seconds, max_retries=1)
+    try:
+        sent = Summaries(cfg, storage, AlertSender(cfg, http, dry_run)).send_pnl()
+    finally:
+        http.close()
+        storage.close()
+    if sent:
+        display.console.print("[green]Paper-trade summary sent - check your phone![/green]")
+    if CHART_PATH.exists():
+        display.console.print(f"Chart also saved to {CHART_PATH}")
+    return 0

@@ -255,6 +255,9 @@ scoring:
 # ---------------------------------------------------------------------
 # Tokens that FAIL safety are never alerted, whatever their score.
 alerts:
+  # true = send an alert the moment a token crosses the threshold.
+  # false = no instant alerts (you'll still get the hourly digest below).
+  instant: true
   # Send an alert when the combined score reaches this (0-100).
   score_threshold: 70
   # After alerting on a token, stay quiet about it for this many minutes...
@@ -270,6 +273,26 @@ alerts:
   # TELEGRAM_CHAT_ID in .env; Discord needs DISCORD_WEBHOOK_URL.
   telegram: true
   discord: false
+
+
+# ---------------------------------------------------------------------
+# SCHEDULED SUMMARIES - regular messages to Telegram/Discord.
+# ---------------------------------------------------------------------
+summaries:
+  # Hourly(ish) digest of the best tokens right now, even if none crossed
+  # the alert threshold.
+  digest: true
+  digest_every_minutes: 60
+  # How many tokens to list in the digest.
+  digest_top_n: 5
+
+  # Paper-trade results for today as a chart image (running profit/loss
+  # and each trade's win or loss), sent every few hours...
+  pnl_chart: true
+  pnl_every_hours: 2
+  # ...plus an end-of-day summary at this time on the PC's clock
+  # (24-hour "HH:MM", e.g. "21:00"). Use "" to turn it off.
+  pnl_daily_time: "21:00"
 
 
 # ---------------------------------------------------------------------

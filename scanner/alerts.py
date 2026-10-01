@@ -197,11 +197,11 @@ class AlertSender:
             problems.append("Both telegram and discord are false in config.yaml")
         return problems
 
-    def send(self, text_html: str) -> bool:
+    def send(self, text_html: str, label: str = "ALERT") -> bool:
         """Deliver to every configured channel. True if at least one worked."""
         if self.dry_run:
             from .display import console
-            console.rule("[bold yellow]ALERT (dry run - not sent)[/bold yellow]")
+            console.rule(f"[bold yellow]{label} (dry run - not sent)[/bold yellow]")
             console.print(to_plain(text_html), markup=False, highlight=False)
             console.rule()
             return False
@@ -212,10 +212,50 @@ class AlertSender:
             ok |= self._discord(to_plain(text_html)) is None
         if not (self.telegram_ready or self.discord_ready):
             from .display import console
-            console.rule("[bold yellow]ALERT (no delivery set up - shown here)[/bold yellow]")
+            console.rule(f"[bold yellow]{label} (no delivery set up - shown here)[/bold yellow]")
             console.print(to_plain(text_html), markup=False, highlight=False)
             console.rule()
         return ok
+
+    def send_photo(self, png: bytes | None, caption_html: str, save_path=None) -> bool:
+        """Send a chart image with a caption (text only if there's no image)."""
+        if png and save_path is not None:
+            try:
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                save_path.write_bytes(png)
+            except OSError:
+                log.warning("Couldn't save chart to %s", save_path)
+        if self.dry_run or not (self.telegram_ready or self.discord_ready):
+            from .display import console
+            note = f"\n(chart saved to {save_path})" if png and save_path is not None else ""
+            console.rule("[bold yellow]SUMMARY (not sent)[/bold yellow]")
+            console.print(to_plain(caption_html) + note, markup=False, highlight=False)
+            console.rule()
+            return False
+        if png is None:
+            return self.send(caption_html)
+        ok = False
+        if self.telegram_ready:
+            ok |= self._telegram_photo(png, caption_html) is None
+        if self.discord_ready:
+            status, _ = self.http.post_multipart_status(
+                self.cfg.secrets["DISCORD_WEBHOOK_URL"].strip(),
+                {"content": to_plain(caption_html)[:DISCORD_LIMIT]},
+                {"file": ("pnl.png", png, "image/png")}, bucket=BUCKET_DISCORD, expected=(400, 401, 404))
+            ok |= status in (200, 204)
+        return ok
+
+    def _telegram_photo(self, png: bytes, caption_html: str) -> str | None:
+        sec = self.cfg.secrets
+        url = TELEGRAM_URL.format(token=sec["TELEGRAM_BOT_TOKEN"].strip()).replace("/sendMessage", "/sendPhoto")
+        status, data = self.http.post_multipart_status(
+            url, {"chat_id": sec["TELEGRAM_CHAT_ID"].strip(), "caption": caption_html[:1024],
+                  "parse_mode": "HTML"},
+            {"photo": ("pnl.png", png, "image/png")}, bucket=BUCKET_TELEGRAM, expected=(400, 401, 403, 404))
+        if status == 200 and isinstance(data, dict) and data.get("ok"):
+            return None
+        log.warning("Telegram photo failed (%s): %s", status, (data or {}).get("description") if isinstance(data, dict) else "")
+        return "photo failed"
 
     def _telegram(self, text_html: str) -> str | None:
         """Returns None on success, else a plain-English error."""
@@ -305,6 +345,8 @@ class AlertManager:
 
     def process(self, rows: list[ScanRow], now: float | None = None) -> list[int]:
         now = now or time.time()
+        if not self.cfg.alerts.instant:
+            return []
         ready = [r for r in rows if self.eligible(r, now) is None]
         ready.sort(key=lambda r: r.composite.score, reverse=True)
         sent_ids = []

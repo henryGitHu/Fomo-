@@ -46,7 +46,8 @@ Right now, every scan does this:
 1. **Install Python 3.11 or newer** from <https://www.python.org/downloads/>.
    On the first installer screen, **tick "Add python.exe to PATH"**.
 2. **Put this folder somewhere permanent**, for example `C:\CryptoScanner`.
-3. **Double-click `setup.bat`.** It creates a private Python environment in a
+3. **Double-click `setup.bat`.** (Run it again after any update that adds
+   new features, so newly required packages get installed.) It creates a private Python environment in a
    `.venv` folder, installs what the scanner needs, creates your `.env`
    secrets file, and checks `config.yaml`. Wait for "Setup complete".
 
@@ -183,6 +184,46 @@ momentum first. Results are remembered: 60 minutes for OK, 6 hours for FAIL,
 while it works through the list.
 
 All thresholds are in the `safety:` section of `config.yaml`.
+
+## Scheduled summaries (Telegram)
+
+On top of instant alerts, the scanner sends regular updates:
+
+- **Hourly digest:** the top 5 tokens right now, with score, safety, 1h/5m
+  change, liquidity, risk and a chart link, even if none crossed the alert
+  threshold. They're watch-list ideas, not alerts.
+- **Paper-trade chart every 2 hours:** an image of today's results. The top
+  panel shows your running profit/loss in dollars; the bottom panel shows
+  each finished trade as a win (blue) or loss (red). The caption gives net
+  P&L, wins and losses, best and worst trade, and the all-time total.
+- **End-of-day summary** at 21:00 by your PC's clock.
+
+Change the timing in the `summaries:` section of `config.yaml`. If you want
+**only** the hourly digest and no instant alerts, set `alerts.instant: false`.
+
+To get the paper-trade chart right now, run `.\run.bat --send-pnl`. The
+latest chart is also saved as `reports\latest-pnl.png`.
+
+## Keeping it running
+
+The scanner only works while `run.bat` is open and the computer is awake.
+Alerts, digests and paper trades all pause when it isn't.
+
+**On your laptop** (plugged in):
+1. Press Start, type **Power, sleep and battery settings**, and open it.
+   Under **Screen, sleep & hibernate timeouts**, set **"When plugged in, put
+   my device to sleep after"** to **Never**. The screen turning off is fine.
+2. Press Start, type **Control Panel**, and go to **Hardware and Sound**,
+   then **Power Options**, then **Choose what closing the lid does**. Set
+   **When I close the lid / Plugged in** to **Do nothing**. Now you can
+   close the lid and it keeps running.
+3. Optional: start it automatically when you log in. See **Start
+   automatically with Windows** below.
+
+**24/7 without your laptop:** run it on a small always-on computer instead.
+That could be a cheap cloud server (about $4–6/month, and some providers
+have free tiers) or a Raspberry Pi at home. It needs a few extra setup
+files for Linux, which can be added on request.
 
 ## Paper trading and the report
 

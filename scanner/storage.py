@@ -107,6 +107,11 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_token_ts ON alerts (chain, token_address, ts);
 
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS alert_prices (
     alert_id  INTEGER NOT NULL REFERENCES alerts(id),
     ts        REAL NOT NULL,
@@ -302,3 +307,16 @@ class Storage:
                WHERE a.ts >= ? ORDER BY a.ts""",
             (since,),
         ).fetchall()
+
+    # ------------------------------------------------------------------ small state
+    def get_value(self, key: str, default: str | None = None) -> str | None:
+        row = self.conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_value(self, key: str, value: str) -> None:
+        self.conn.execute("INSERT INTO kv (key, value) VALUES (?, ?) "
+                          "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+        self.conn.commit()
+
+    def alerts_since(self, since: float) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM alerts WHERE ts >= ?", (since,)).fetchone()[0]

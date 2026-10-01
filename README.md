@@ -7,15 +7,15 @@ sellers, and price rising steadily rather than in one spike.
 > **It never trades.** It only watches and reports. You decide what to do,
 > and you place any trade yourself.
 
-## What works so far (phases 1–3 of 6)
+## What works so far (phases 1–4 of 6)
 
 | Phase | What it adds | Status |
 |---|---|---|
 | 1 | Settings, database, DexScreener + GeckoTerminal data, console list of top movers | **Done** |
 | 2 | Safety checks (Solana mint/freeze authority, EVM honeypot/tax checks) | **Done** |
 | 3 | Combined score + Telegram phone alerts with suggested trades | **Done** |
-| 4 | Paper-trade tracking + `report.bat` performance report | Next |
-| 5 | Reddit mention tracking | Planned |
+| 4 | Paper-trade tracking + `report.bat` performance report | **Done** |
+| 5 | Reddit mention tracking | Next |
 | 6 | Telegram channel mention tracking | Planned |
 
 Right now, every scan does this:
@@ -35,6 +35,9 @@ Right now, every scan does this:
    buzz from phase 5 on) and prints the top tokens in a table.
 7. Sends a **phone alert** when a token's combined score reaches 70, with a
    suggested trade. Tokens that failed safety are never alerted.
+8. **Paper-trades every alert.** It follows the price for 4 hours and records
+   whether the suggested take-profit or stop-loss would have hit first, and
+   the result after costs. `report.bat` sums it all up.
 
 ---
 
@@ -180,6 +183,36 @@ momentum first. Results are remembered: 60 minutes for OK, 6 hours for FAIL,
 while it works through the list.
 
 All thresholds are in the `safety:` section of `config.yaml`.
+
+## Paper trading and the report
+
+Every alert, including `--dry-run` alerts, is tracked automatically while
+`run.bat` is running:
+- It records the price at **+5 min, +15 min, +60 min and +4 hours**.
+- It simulates the suggested trade. If the price reaches the take-profit
+  first, it's a win at +15%. If it reaches the stop-loss first, it's a loss
+  at the price seen, which can be worse than −8% if the price gapped down.
+  If neither happens within 4 hours, the trade closes at the 4-hour price.
+- The estimated fees and slippage from the alert are subtracted, so results
+  are **net**.
+
+**Double-click `report.bat`** at any time to see:
+- the alert count, win rate, average and median net return, best and worst
+  trade, and the total if you had taken every suggestion
+- the average price move at +5m, +15m, +60m and +4h
+- performance **by chain, by score band, by risk level and by signal**
+
+Options, typed after the name in PowerShell: `.\report.bat --days 7` shows
+only the last week, and `.\report.bat --live-only` leaves out dry-run alerts.
+
+**How to use it:** wait for at least 30–50 finished trades. A handful proves
+nothing either way. Then look for patterns. For example, if the 70–79 score
+band loses but 80+ wins, raise `alerts.score_threshold` to 80. If a chain or
+signal keeps losing, turn it down or off.
+
+Honest limits: prices are sampled about every 90 seconds, so very fast
+spikes can be missed. Results only build up while `run.bat` is running. And
+past results don't guarantee future ones.
 
 ## Changing settings
 

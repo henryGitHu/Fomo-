@@ -68,8 +68,8 @@ class DexScreener:
     # ------------------------------------------------------------------ pair data
     def snapshots(self, chain_name: str, addresses: list[str]) -> dict[str, Snapshot]:
         """Best (most liquid) pair for each token address -> Snapshot."""
-        chain = next(c for c in self.cfg.enabled_chains if c.name == chain_name)
-        if not chain.dexscreener_id or not addresses:
+        chain = next((c for c in self.cfg.enabled_chains if c.name == chain_name), None)
+        if chain is None or not chain.dexscreener_id or not addresses:
             return {}
         result: dict[str, Snapshot] = {}
         for i in range(0, len(addresses), MAX_TOKENS_PER_CALL):

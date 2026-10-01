@@ -23,6 +23,7 @@ from .scoring import basic_filters, composite_score, momentum_score
 from .sources.dexscreener import DexScreener
 from .sources.geckoterminal import GeckoTerminal
 from .storage import Storage
+from .tracker import Tracker
 
 log = logging.getLogger("scanner")
 
@@ -61,6 +62,7 @@ class Scanner:
         self.geckoterminal = GeckoTerminal(cfg, http) if cfg.geckoterminal.enabled else None
         self.safety = SafetyChecker(cfg, storage, http) if cfg.safety.enabled else None
         self.alerts = AlertManager(cfg, storage, http, dry_run, self.safety)
+        self.tracker = Tracker(cfg, storage, self.dexscreener)
         self._chain_types = {c.name: c.type for c in cfg.enabled_chains}
         self._last_prune = 0.0
 
@@ -155,6 +157,10 @@ class Scanner:
             self.alerts.process(rows, now)
         except Exception:  # an alert problem must never stop the scanner
             log.exception("Alert processing failed")
+        try:
+            self.tracker.update(now)
+        except Exception:
+            log.exception("Paper-trade tracking failed")
         log.info("Scan done: %d candidates discovered, %d snapshots, %d pass filters",
                  len(candidates), len(rows), sum(1 for r in rows if r.filters.passed))
         return rows

@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_token_ts ON alerts (chain, token_address, ts);
 
+CREATE TABLE IF NOT EXISTS alert_prices (
+    alert_id  INTEGER NOT NULL REFERENCES alerts(id),
+    ts        REAL NOT NULL,
+    price_usd REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alert_prices ON alert_prices (alert_id, ts);
+
 CREATE TABLE IF NOT EXISTS outcomes (
     alert_id         INTEGER PRIMARY KEY REFERENCES alerts(id),
     price_5m         REAL,
@@ -245,3 +252,53 @@ class Storage:
                ORDER BY ts DESC LIMIT 1""",
             (chain, address),
         ).fetchone()
+
+    # ------------------------------------------------------------------ paper trades
+    def alerts_to_track(self, since: float) -> list[sqlite3.Row]:
+        """Alerts still inside their tracking window, plus any never evaluated."""
+        return self.conn.execute(
+            """SELECT a.* FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+               WHERE a.ts >= ? OR o.alert_id IS NULL ORDER BY a.ts""",
+            (since,),
+        ).fetchall()
+
+    def add_alert_price(self, alert_id: int, ts: float, price: float) -> None:
+        self.conn.execute("INSERT INTO alert_prices (alert_id, ts, price_usd) VALUES (?, ?, ?)",
+                          (alert_id, ts, price))
+
+    def price_observations(self, alert_id: int, chain: str, address: str,
+                           start: float, end: float) -> list[tuple[float, float]]:
+        """(ts, price) after the alert, from the tracker and from regular scans."""
+        rows = self.conn.execute(
+            """SELECT ts, price_usd FROM alert_prices WHERE alert_id = ? AND ts > ? AND ts <= ?
+               UNION
+               SELECT ts, price_usd FROM snapshots
+               WHERE chain = ? AND token_address = ? AND ts > ? AND ts <= ? AND price_usd IS NOT NULL
+               ORDER BY ts""",
+            (alert_id, start, end, chain, address, start, end),
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows if r[1] and r[1] > 0]
+
+    def recently_snapshotted(self, chain: str, address: str, since: float) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM snapshots WHERE chain = ? AND token_address = ? AND ts >= ? LIMIT 1",
+            (chain, address, since),
+        ).fetchone() is not None
+
+    def save_outcome(self, alert_id: int, **values) -> None:
+        cols = ["alert_id"] + list(values)
+        updates = ", ".join(f"{c} = excluded.{c}" for c in values)
+        self.conn.execute(
+            f"""INSERT INTO outcomes ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})
+                ON CONFLICT(alert_id) DO UPDATE SET {updates}""",
+            [alert_id] + [values[c] for c in values],
+        )
+
+    def alerts_with_outcomes(self, since: float = 0) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """SELECT a.*, o.price_5m, o.price_15m, o.price_60m, o.price_4h, o.hit, o.hit_ts,
+                      o.gross_return_pct, o.net_return_pct
+               FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+               WHERE a.ts >= ? ORDER BY a.ts""",
+            (since,),
+        ).fetchall()

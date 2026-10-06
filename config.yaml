@@ -112,9 +112,10 @@ sources:
     use_new_pools: true
     # How many pages (20 pools each) to pull from each list, per chain.
     pages: 1
-    # GeckoTerminal's free public limit is 30 requests/minute.
-    # Keep this below 30.
-    requests_per_minute: 25
+    # GeckoTerminal's free (no-key) limit is shared and can be stricter
+    # than the published 30/minute, so we stay well under it. If you see
+    # "rate limit" warnings for GeckoTerminal, lower this further.
+    requests_per_minute: 10
 
 
 # ---------------------------------------------------------------------

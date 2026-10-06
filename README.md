@@ -349,7 +349,7 @@ limit, and backs off if a source asks it to slow down.
 | Source | What we use | Published limit | We use |
 |---|---|---|---|
 | DexScreener | Boosted tokens, new token profiles, pair data | 60/min (lists), 300/min (pairs) | 50 and 250/min |
-| GeckoTerminal | Trending pools and new pools, per chain | 30/min | 25/min |
+| GeckoTerminal | Trending pools and new pools, per chain | 30/min published (stricter in practice) | 10/min |
 | RugCheck | Solana token safety report | not published | 15/min |
 | Solana public RPC | Mint/freeze authority (backup only) | 100 per 10s | 30/min |
 | GoPlus | EVM contract security | 30/min | 20/min |

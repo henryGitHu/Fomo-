@@ -157,6 +157,12 @@ class HttpClient:
                     return resp.status_code, None
 
             retryable = resp.status_code == 429 or resp.status_code >= 500
+            if resp.status_code == 429 and attempt >= self.max_retries:
+                host = httpx.URL(url).host
+                log.warning("%s is rate-limiting us; skipping this request until the next scan. "
+                            "If this keeps happening, lower that source's requests_per_minute "
+                            "in config.yaml.", host)
+                return resp.status_code, None
             if not retryable or attempt >= self.max_retries:
                 log.warning("HTTP %s from %s (giving up): %s", resp.status_code, redact(url),
                             resp.text[:200].replace("\n", " "))

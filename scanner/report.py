@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SETTINGS PROBLEM: {exc}", file=sys.stderr)
         return 2
     if not cfg.storage.database_path.exists():
-        console.print("No database yet - run run.bat first so there's something to report on.")
+        console.print("No data yet - start the scanner first (run.bat on Windows, 'scanner start' on a server).")
         return 0
     storage = Storage(cfg.storage.database_path)
     try:

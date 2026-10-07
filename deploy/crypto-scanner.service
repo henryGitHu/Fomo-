@@ -1,0 +1,19 @@
+[Unit]
+Description=Crypto Momentum Scanner (alerts only - never trades)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scanner
+Group=scanner
+WorkingDirectory=/opt/crypto-scanner
+ExecStart=/opt/crypto-scanner/.venv/bin/python -m scanner.main
+# Restart automatically if it ever stops (crash, network outage, reboot).
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+Environment=COLUMNS=140
+
+[Install]
+WantedBy=multi-user.target

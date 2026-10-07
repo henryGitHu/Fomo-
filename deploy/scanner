@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Helper command for the Crypto Momentum Scanner on a Linux server.
+# Type "scanner" on its own to see what it can do.
+set -euo pipefail
+
+DIR=/opt/crypto-scanner
+SERVICE=crypto-scanner
+PY="$DIR/.venv/bin/python"
+REPO=https://github.com/henryGitHu/Fomo-.git
+BRANCH=claude/bot-spec-phase-1-y38wxm
+
+as_scanner() { sudo -u scanner -H bash -c "cd '$DIR' && $*"; }
+
+case "${1:-help}" in
+  start)    sudo systemctl start "$SERVICE";   echo "Scanner started." ;;
+  stop)     sudo systemctl stop "$SERVICE";    echo "Scanner stopped." ;;
+  restart)  sudo systemctl restart "$SERVICE"; echo "Scanner restarted." ;;
+  status)   systemctl status "$SERVICE" --no-pager -l | head -n 15 ;;
+  logs)     echo "Showing live output - press Ctrl+C to stop watching (the scanner keeps running)."
+            sudo journalctl -u "$SERVICE" -f -n 60 ;;
+  report)   shift; as_scanner "'$PY' -m scanner.report $*" ;;
+  test-alert)
+            as_scanner "'$PY' -m scanner.main --test-alert" ;;
+  send-pnl) as_scanner "'$PY' -m scanner.main --send-pnl" ;;
+  telegram-login)
+            as_scanner "'$PY' -m scanner.sources.telegram --login" ;;
+  edit-config)
+            sudo nano "$DIR/config.yaml"
+            sudo chown scanner:scanner "$DIR/config.yaml"
+            if as_scanner "'$PY' -c 'from scanner.config import load_config; load_config()'"; then
+              sudo systemctl restart "$SERVICE"; echo "Settings OK - scanner restarted."
+            else
+              echo "There's a problem in config.yaml (see above). Run 'scanner edit-config' again to fix it."
+            fi ;;
+  edit-env)
+            sudo nano "$DIR/.env"
+            sudo chown scanner:scanner "$DIR/.env"; sudo chmod 600 "$DIR/.env"
+            sudo systemctl restart "$SERVICE"; echo "Secrets saved - scanner restarted." ;;
+  update)
+            echo "Downloading the latest version..."
+            sudo cp "$DIR/config.yaml" "$DIR/config.yaml.bak"
+            sudo -u scanner git -C "$DIR" fetch -q origin "$BRANCH"
+            sudo -u scanner git -C "$DIR" reset -q --hard "origin/$BRANCH"
+            as_scanner "'$PY' -m pip install -q --upgrade pip && '$PY' -m pip install -q -r requirements.txt"
+            sudo install -m 755 "$DIR/deploy/scanner" /usr/local/bin/scanner
+            sudo systemctl restart "$SERVICE"
+            echo "Updated and restarted. Your old settings were saved as config.yaml.bak -"
+            echo "if you had changed any settings, run 'scanner edit-config' to re-apply them." ;;
+  *)
+    cat <<HELP
+Crypto Momentum Scanner - server commands (it never trades)
+
+  scanner status          is it running?
+  scanner logs            watch it live (Ctrl+C to stop watching)
+  scanner report          paper-trading report  (e.g. scanner report --days 7)
+  scanner test-alert      send a test message to your phone
+  scanner send-pnl        send today's paper-trade chart now
+  scanner edit-config     change settings (config.yaml), then restarts
+  scanner edit-env        change secrets (.env: bot token etc.), then restarts
+  scanner telegram-login  one-time login for reading Telegram channels
+  scanner update          download the latest version and restart
+  scanner start | stop | restart
+
+In the editor (nano): arrow keys to move, Ctrl+O then Enter to save, Ctrl+X to exit.
+HELP
+    ;;
+esac

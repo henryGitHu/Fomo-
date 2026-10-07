@@ -276,10 +276,52 @@ Alerts, digests and paper trades all pause when it isn't.
 3. Optional: start it automatically when you log in. See **Start
    automatically with Windows** below.
 
-**24/7 without your laptop:** run it on a small always-on computer instead.
-That could be a cheap cloud server (about $4–6/month, and some providers
-have free tiers) or a Raspberry Pi at home. It needs a few extra setup
-files for Linux, which can be added on request.
+**24/7 without your laptop:** run it on a cloud server. See **Running on a
+cloud server** below.
+
+## Running on a cloud server (24/7)
+
+A small Linux server (about $4–6/month) runs the scanner around the clock,
+restarts it automatically after crashes or reboots, and doesn't need your
+laptop at all.
+
+1. **Create the server.** Any provider works; DigitalOcean is the simplest.
+   Create a "Droplet" with **Ubuntu 24.04**, the cheapest **1 GB RAM**
+   plan, and a region near you.
+2. **Open its console.** In DigitalOcean, click the droplet, then
+   **Access**, then **Launch Droplet Console**. A terminal opens in your
+   browser.
+3. **Install.** Paste this in one line, with your own timezone at the end
+   (for example America/Chicago, Europe/London or Asia/Manila):
+   ```
+   curl -fsSL https://raw.githubusercontent.com/henryGitHu/Fomo-/claude/bot-spec-phase-1-y38wxm/deploy/install.sh | bash -s -- America/New_York
+   ```
+4. **Add your secrets.** Run `scanner edit-env` and fill in
+   `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, the same values as in your
+   PC's `.env`. Save with Ctrl+O, then Enter, and exit with Ctrl+X.
+5. Run `scanner test-alert` to check that a message reaches your phone.
+6. Run `scanner start`. It now runs 24/7.
+7. **Stop the copy on your PC**, otherwise you'll get every alert twice.
+
+**Everyday commands** (type `scanner` to see them all):
+
+| Command | What it does |
+|---|---|
+| `scanner status` | Is it running? |
+| `scanner logs` | Watch it live (Ctrl+C stops watching; the scanner keeps running) |
+| `scanner report` | Paper-trading report |
+| `scanner edit-config` | Change settings, then restart automatically |
+| `scanner telegram-login` | One-time login for Telegram channel reading |
+| `scanner update` | Get the latest version |
+
+Notes:
+- The server starts with fresh paper-trading history. Your PC's history
+  stays in `C:\CryptoScanner\data`.
+- The end-of-day summary uses the server's clock, which is the timezone you
+  gave the installer.
+- Cloud servers share internet addresses with other users, so free data
+  sites may rate-limit them a little more. If you see rate-limit warnings,
+  lower that source's `requests_per_minute` with `scanner edit-config`.
 
 ## Paper trading and the report
 

@@ -1,1 +1,4 @@
 *.bat text eol=crlf
+*.sh text eol=lf
+deploy/scanner text eol=lf
+deploy/*.service text eol=lf

@@ -2,6 +2,7 @@
 # One-time installer for the Crypto Momentum Scanner on Ubuntu 24.04.
 # Run as root:  bash install.sh [Your/Timezone]   e.g.  bash install.sh America/New_York
 set -euo pipefail
+cd /
 
 REPO=https://github.com/henryGitHu/Fomo-.git
 BRANCH=claude/bot-spec-phase-1-y38wxm
@@ -55,7 +56,10 @@ install -m 755 "$DIR/deploy/scanner" /usr/local/bin/scanner
 systemctl daemon-reload
 systemctl enable -q crypto-scanner
 
-sudo -u scanner "$DIR/.venv/bin/python" -c "from scanner.config import load_config; load_config(); print('config.yaml OK')"
+# Check the settings load (run from the program's own folder so Python finds it).
+if ! sudo -u scanner bash -c "cd '$DIR' && .venv/bin/python -c 'from scanner.config import load_config; load_config(); print(\"config.yaml OK\")'"; then
+  echo "WARNING: the settings check failed (see above). Run 'scanner edit-config' to fix config.yaml."
+fi
 
 echo
 echo "=============================================================="

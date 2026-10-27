@@ -194,7 +194,7 @@ def test_reentry_after_stop_loss_uses_normal_rules(cfg, tmp_path):
     now = noon()
     seed(storage, now - 7200, HIT_SL, -6.2, addr="Mint111", price=0.01)
     row = make_row(cfg)
-    row.composite.score = 85                                    # above 83, below the 90 re-entry bar
+    row.composite.score = 85                                    # above 78, below the 90 re-entry bar
     assert manager(cfg, storage, Sent()).process([row], now)
 
 
@@ -296,18 +296,18 @@ def test_summaries_show_account(cfg, tmp_path):
 
 # ------------------------------------------------------------------ minimum trade score
 
-def test_only_scores_83_or_better_are_traded(cfg, tmp_path):
+def test_only_scores_78_or_better_are_traded(cfg, tmp_path):
     storage = Storage(tmp_path / "s.db")
     m = manager(cfg, storage, Sent())
     below = make_row(cfg, snap=hot_snap(token_address="Below"))
-    below.composite.score = 82.9
+    below.composite.score = 77.9
     at = make_row(cfg, snap=hot_snap(token_address="At"))
-    at.composite.score = 83
+    at.composite.score = 78
     ids = m.process([below, at], noon())
     traded = [r["token_address"] for r in storage.strategy_trades()]
     assert len(ids) == 1 and traded == ["At"]
     d = Strategy(cfg, storage).decide(below, Strategy(cfg, storage).state(noon()), lambda s: 1.0)
-    assert not d.ok and "below the 83 minimum" in d.reason
+    assert not d.ok and "below the 78 minimum" in d.reason
 
 
 def test_reentry_bar_is_stricter_than_entry(cfg, tmp_path):
@@ -322,4 +322,4 @@ def test_reentry_bar_is_stricter_than_entry(cfg, tmp_path):
 def test_digest_mentions_trade_minimum(cfg, tmp_path):
     from scanner.alerts import AlertSender
     s = Summaries(cfg, Storage(tmp_path / "s.db"), AlertSender(cfg, Sent().http(), False))
-    assert "Trades need a score of 83+" in s.digest_text([], noon())
+    assert "Trades need a score of 78+" in s.digest_text([], noon())

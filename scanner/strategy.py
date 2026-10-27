@@ -4,7 +4,7 @@ Every alert under the strategy is a paper trade from a pretend account
 (default $50). Before a trade is suggested, these rules are checked:
 
   * Minimum score: only tokens whose combined alert score is at least
-    min_trade_score (default 83) are traded.
+    min_trade_score (default 78) are traded.
   * Daily loss limit: today's realised losses + the worst case of trades
     still open + this trade's planned loss must stay within N% of the
     balance at midnight. Once losses reach the limit: no new trades today.

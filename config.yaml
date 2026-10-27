@@ -372,7 +372,7 @@ strategy:
   # RULE: quality over quantity - only take a trade when the token's
   # combined alert score (0-100) is at least this. Lower it (e.g. 75) if
   # the report shows too few trades.
-  min_trade_score: 83
+  min_trade_score: 78
 
   # RULE: never lose more than this percent of the account in one day.
   # Measured against the balance at midnight. Before every trade the bot

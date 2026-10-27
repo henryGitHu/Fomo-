@@ -22,7 +22,8 @@ from rich.table import Table
 
 from .config import ConfigError, load_config
 from .storage import Storage
-from .tracker import CHECKPOINTS, FINISHED, HIT_NO_DATA, HIT_OPEN, HIT_SL, HIT_TP
+from .tracker import CHECKPOINTS, FINISHED, HIT_NO_DATA, HIT_SL, HIT_TP, STILL_OPEN
+from .strategy import HIT_TRAIL
 
 console = Console()
 
@@ -81,7 +82,7 @@ def _group_table(title: str, groups: dict[str, list]) -> Table:
 
 def build_report(rows, out: Console = console) -> None:
     finished = [r for r in rows if r["hit"] in FINISHED and r["net_return_pct"] is not None]
-    open_ = [r for r in rows if r["hit"] in (None, HIT_OPEN)]
+    open_ = [r for r in rows if r["hit"] in STILL_OPEN]
     no_data = [r for r in rows if r["hit"] == HIT_NO_DATA]
 
     out.rule("[bold]Paper-trading report[/bold]")
@@ -104,9 +105,10 @@ def build_report(rows, out: Console = console) -> None:
     if finished:
         tp = sum(1 for r in finished if r["hit"] == HIT_TP)
         sl = sum(1 for r in finished if r["hit"] == HIT_SL)
+        tr = sum(1 for r in finished if r["hit"] == HIT_TRAIL)
         summary.add_row("Win rate (net of costs)", f"{s['win_rate']:.0f}%  ({s['wins']} of {s['n']})")
-        summary.add_row("Hit take-profit / stop-loss / timed out",
-                        f"{tp} / {sl} / {len(finished) - tp - sl}")
+        summary.add_row("Take-profit / runner / stop-loss / timed out",
+                        f"{tp} / {tr} / {sl} / {len(finished) - tp - sl - tr}")
         summary.add_row("Average net return per trade", _pct(s["avg"]))
         summary.add_row("Median net return", _pct(s["median"]))
         best = max(finished, key=lambda r: r["net_return_pct"])
@@ -167,6 +169,7 @@ def build_report(rows, out: Console = console) -> None:
         recent.add_row(datetime.fromtimestamp(r["ts"]).strftime("%m-%d %H:%M"),
                        (r["symbol"] or "?")[:10], r["chain"], f"{r['score'] or 0:.0f}",
                        {"TP": "take-profit", "SL": "stop-loss", "EXPIRED": "timed out (4h)",
+                        "TRAIL": "runner (trailing stop)", "RUNNING": "running (trailing)",
                         "NO_DATA": "no data"}.get(r["hit"] or "", "open"),
                        _pct(r["net_return_pct"]))
     out.print(recent)
@@ -180,6 +183,79 @@ def build_report(rows, out: Console = console) -> None:
               "  - Prices are sampled about every 90 seconds, so very fast spikes can be missed.\n"
               "  - If a score band or signal keeps losing, raise alerts.score_threshold or adjust\n"
               "    the weights in config.yaml, then compare again after more alerts.")
+
+
+def account_report(cfg, storage, out: Console = console, now: float | None = None) -> None:
+    """Your strategy's paper account: balance, weekly goal, loss-limit days."""
+    from .strategy import CLOSED, Strategy, day_start, trade_pnl, week_start
+    s = cfg.strategy
+    now = now or time.time()
+    st = Strategy(cfg, storage).state(now)
+    trades = storage.strategy_trades()
+    closed = sorted((t for t in trades if t["hit"] in CLOSED and t["hit_ts"]), key=lambda t: t["hit_ts"])
+
+    out.rule("[bold]Your strategy - paper account[/bold]")
+    acct = Table(box=box.SIMPLE, show_header=False)
+    acct.add_column(style="bold")
+    acct.add_column(justify="right")
+    total = st.balance - s.starting_balance_usd
+    acct.add_row("Starting balance", f"${s.starting_balance_usd:,.2f}")
+    acct.add_row("Balance now", f"${st.balance:,.2f}  ({_pct(total / s.starting_balance_usd * 100)})")
+    acct.add_row("Today", f"{_usd(st.today_pnl)} - loss limit ${st.daily_limit_usd:,.2f}"
+                 + ("  [red](reached)[/red]" if st.limit_hit else ""))
+    acct.add_row("This week", f"{_usd(st.week_pnl)} ({_pct(st.week_pct)}) - goal "
+                 f"{s.weekly_target_min_pct:g}-{s.weekly_target_max_pct:g}%")
+    acct.add_row("Open trades", f"{st.open_count} of {s.max_open_trades} (${st.open_cost:,.2f} in use)")
+    acct.add_row("High-risk trades left today", str(st.high_allowance))
+    out.print(acct)
+
+    if not closed:
+        out.print("No strategy trades have finished yet.\n")
+        return
+
+    # Week by week, with balances carried forward.
+    weeks: dict[float, list] = {}
+    days: dict[float, float] = {}
+    for t in closed:
+        weeks.setdefault(week_start(t["hit_ts"]), []).append(t)
+        d = day_start(t["hit_ts"])
+        days[d] = days.get(d, 0.0) + trade_pnl(t)
+    wt = Table(title="Week by week (weeks start Monday)", title_justify="left",
+               box=box.SIMPLE_HEAD, header_style="bold cyan")
+    for col, just in (("Week of", "left"), ("Trades", "right"), ("Win rate", "right"),
+                      ("Result", "right"), ("% of balance", "right"), ("Goal", "left")):
+        wt.add_column(col, justify=just)
+    balance = s.starting_balance_usd
+    for w0 in sorted(weeks):
+        ts = weeks[w0]
+        pnl = sum(trade_pnl(t) for t in ts)
+        pct = pnl / balance * 100 if balance else 0
+        wins = sum(1 for t in ts if trade_pnl(t) > 0)
+        goal = ("[green]reached[/green]" if pct >= s.weekly_target_min_pct
+                else "[red]loss[/red]" if pct < 0 else "below goal")
+        wt.add_row(datetime.fromtimestamp(w0).strftime("%b %d"), str(len(ts)),
+                   f"{wins / len(ts) * 100:.0f}%", _usd(pnl), _pct(pct), goal)
+        balance += pnl
+    out.print(wt)
+
+    balance = s.starting_balance_usd
+    limit_days = 0
+    for d0 in sorted(days):
+        if -days[d0] >= balance * s.daily_loss_limit_pct / 100:
+            limit_days += 1
+        balance += days[d0]
+    groups = {"High-risk trades": [t for t in closed if (t["risk"] or "").upper() == "HIGH"],
+              "Low/medium-risk trades": [t for t in closed if (t["risk"] or "").upper() != "HIGH"],
+              "Runners (held past target)": [t for t in closed if t["hit"] == HIT_TRAIL]}
+    gt = Table(box=box.SIMPLE_HEAD, header_style="bold cyan")
+    for col, just in (("Group", "left"), ("Trades", "right"), ("Win rate", "right"), ("Total", "right")):
+        gt.add_column(col, justify=just)
+    for name, ts in groups.items():
+        if ts:
+            wins = sum(1 for t in ts if trade_pnl(t) > 0)
+            gt.add_row(name, str(len(ts)), f"{wins / len(ts) * 100:.0f}%", _usd(sum(trade_pnl(t) for t in ts)))
+    out.print(gt)
+    out.print(f"Days the daily loss limit was reached: [bold]{limit_days}[/bold] of {len(days)} trading days\n")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -203,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         rows = storage.alerts_with_outcomes(since)
         if args.live_only:
             rows = [r for r in rows if not r["dry_run"]]
+        if cfg.strategy.enabled:
+            account_report(cfg, storage)
         build_report(rows)
     finally:
         storage.close()

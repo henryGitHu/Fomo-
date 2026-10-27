@@ -21,7 +21,7 @@ from .config import PROJECT_ROOT, Config
 from .models import ScanRow
 from .safety import STATUS_FAIL, STATUS_PASS
 from .storage import Storage
-from .tracker import FINISHED, HIT_OPEN
+from .tracker import FINISHED, STILL_OPEN
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +44,28 @@ class Summaries:
         self.cfg = cfg
         self.storage = storage
         self.sender = sender
+
+    def account_lines(self, now: float) -> list[str]:
+        """Paper-account status for the strategy (empty if the strategy is off)."""
+        if not self.cfg.strategy.enabled:
+            return []
+        from .strategy import Strategy
+        s = self.cfg.strategy
+        st = Strategy(self.cfg, self.storage).state(now)
+        wk = st.week_pct
+        if wk >= s.weekly_target_max_pct:
+            goal = "🎯 above goal"
+        elif wk >= s.weekly_target_min_pct:
+            goal = "✅ goal reached"
+        else:
+            goal = "in progress"
+        limit = ("🛑 daily loss limit reached - no new trades today" if st.limit_hit else
+                 f"loss limit used ${st.loss_today:,.2f} of ${st.daily_limit_usd:,.2f}")
+        return [f"📒 <b>Paper account ${st.balance:,.2f}</b> (started ${s.starting_balance_usd:,.0f})",
+                f"Today {_usd(st.today_pnl)} ({st.today_pct:+.1f}%) · {limit}",
+                f"This week {_usd(st.week_pnl)} (<b>{wk:+.1f}%</b>) · goal "
+                f"{s.weekly_target_min_pct:g}-{s.weekly_target_max_pct:g}% · {goal}",
+                f"Open trades {st.open_count}/{s.max_open_trades} · high-risk trades left today {st.high_allowance}"]
 
     # ------------------------------------------------------------------ scheduling
     def _due(self, key: str, every_seconds: float, now: float) -> bool:
@@ -97,8 +119,11 @@ class Summaries:
                          f"liq {_money(s.liquidity_usd)} · risk {r.composite.risk}{social}{link}")
         alerts = self.storage.alerts_since(now - self.cfg.summaries.digest_every_minutes * 60)
         open_trades = sum(1 for r in self.storage.alerts_with_outcomes(now - 5 * 3600)
-                          if r["hit"] in (None, HIT_OPEN))
+                          if r["hit"] in STILL_OPEN)
         lines += ["", f"Alerts in this period: {alerts} · Paper trades still open: {open_trades}"]
+        acct = self.account_lines(now)
+        if acct:
+            lines += [""] + acct
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ P&L chart
@@ -109,7 +134,7 @@ class Summaries:
         done = [r for r in rows if r["hit"] in FINISHED and r["net_return_pct"] is not None
                 and r["hit_ts"] and start <= r["hit_ts"] <= now]
         done.sort(key=lambda r: r["hit_ts"])
-        open_ = [r for r in rows if r["hit"] in (None, HIT_OPEN)]
+        open_ = [r for r in rows if r["hit"] in STILL_OPEN]
         return done, open_
 
     def send_pnl(self, now: float | None = None, end_of_day: bool = False) -> bool:
@@ -135,6 +160,9 @@ class Summaries:
         else:
             caption.append("No paper trades have finished yet today.")
         caption.append(f"Still open: {len(open_)} · All-time: {_usd(all_total)} over {len(all_rows)} trades")
+        acct = self.account_lines(now)
+        if acct:
+            caption += acct
         caption.append("<i>Simulated - nothing was bought or sold.</i>")
         text = "\n".join(caption)
 

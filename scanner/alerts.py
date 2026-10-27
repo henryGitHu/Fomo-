@@ -46,6 +46,8 @@ class TradeSuggestion:
     slippage_pct: float
     cost_pct: float          # fees + slippage, round trip
     costs_eat_target: bool   # costs above the configured share of the TP gain
+    take_profit_pct: float = 0.0
+    stop_loss_pct: float = 0.0
 
 
 def estimate_slippage_pct(position_usd: float, liquidity_usd: float | None) -> float:
@@ -59,20 +61,33 @@ def estimate_slippage_pct(position_usd: float, liquidity_usd: float | None) -> f
     return min(100.0, 2 * (2 * position_usd / liquidity_usd) * 100)
 
 
-def suggest_trade(snap: Snapshot, t: TradeSettings) -> TradeSuggestion | None:
+def trade_cost_pct(t: TradeSettings, position_usd: float, liquidity_usd: float | None) -> float:
+    return t.round_trip_fee_pct + estimate_slippage_pct(position_usd, liquidity_usd)
+
+
+def suggest_trade(snap: Snapshot, t: TradeSettings, position_usd: float | None = None,
+                  take_profit_pct: float | None = None,
+                  stop_loss_pct: float | None = None) -> TradeSuggestion | None:
+    """Trade plan. Size/targets default to the "trade:" settings; the strategy
+    passes its own (size from the paper account, targets by risk rating)."""
     if not snap.price_usd:
         return None
-    slip = estimate_slippage_pct(t.position_usd, snap.liquidity_usd)
+    size = t.position_usd if position_usd is None else position_usd
+    tp_pct = t.take_profit_pct if take_profit_pct is None else take_profit_pct
+    sl_pct = t.stop_loss_pct if stop_loss_pct is None else stop_loss_pct
+    slip = estimate_slippage_pct(size, snap.liquidity_usd)
     cost = t.round_trip_fee_pct + slip
     return TradeSuggestion(
         entry=snap.price_usd,
-        take_profit=snap.price_usd * (1 + t.take_profit_pct / 100),
-        stop_loss=snap.price_usd * (1 - t.stop_loss_pct / 100),
-        position_usd=t.position_usd,
+        take_profit=snap.price_usd * (1 + tp_pct / 100),
+        stop_loss=snap.price_usd * (1 - sl_pct / 100),
+        position_usd=size,
         fee_pct=t.round_trip_fee_pct,
         slippage_pct=slip,
         cost_pct=cost,
-        costs_eat_target=cost > t.take_profit_pct * t.warn_if_costs_exceed_pct_of_tp / 100,
+        costs_eat_target=cost > tp_pct * t.warn_if_costs_exceed_pct_of_tp / 100,
+        take_profit_pct=tp_pct,
+        stop_loss_pct=sl_pct,
     )
 
 
@@ -109,7 +124,8 @@ SIGNAL_TEXT = {"volume_spike": "volume spike", "buy_pressure": "buyers dominatin
                "price_uptrend": "steady uptrend", "giant_candle": "one giant candle (caution)"}
 
 
-def format_alert(row: ScanRow, trade: TradeSuggestion | None, cfg: Config) -> str:
+def format_alert(row: ScanRow, trade: TradeSuggestion | None, cfg: Config,
+                 account_line: str | None = None) -> str:
     s, mom, comp, saf = row.snap, row.momentum, row.composite, row.safety
     e = html.escape
     name = e(s.symbol or s.token_address[:8])
@@ -150,20 +166,29 @@ def format_alert(row: ScanRow, trade: TradeSuggestion | None, cfg: Config) -> st
         lines.append("Risk factors: " + ", ".join(comp.risk_reasons))
 
     if trade:
-        t = cfg.trade
+        tp_pct = trade.take_profit_pct or cfg.trade.take_profit_pct
+        sl_pct = trade.stop_loss_pct or cfg.trade.stop_loss_pct
+        title = ("💡 <b>Suggested trade</b> <i>(your strategy, " + e(comp.risk.lower()) + " risk - you decide)</i>"
+                 if account_line else "💡 <b>Suggested trade</b> <i>(a suggestion only - you decide)</i>")
         lines += [
             "",
-            "💡 <b>Suggested trade</b> <i>(a suggestion only - you decide)</i>",
+            title,
             f"Entry ~{_price(trade.entry)}",
-            f"Take profit {_price(trade.take_profit)} (+{t.take_profit_pct:g}%)",
-            f"Stop loss {_price(trade.stop_loss)} (-{t.stop_loss_pct:g}%)",
-            f"Size ${trade.position_usd:,.0f}",
+            f"Take profit {_price(trade.take_profit)} (+{tp_pct:g}%)",
+            f"Stop loss {_price(trade.stop_loss)} (-{sl_pct:g}%)",
+            f"Size ${trade.position_usd:,.2f}",
             f"Est. costs ~{trade.cost_pct:.1f}% round trip "
-            f"(fees {trade.fee_pct:g}% + slippage ~{trade.slippage_pct:.1f}%) vs +{t.take_profit_pct:g}% target",
+            f"(fees {trade.fee_pct:g}% + slippage ~{trade.slippage_pct:.1f}%) vs +{tp_pct:g}% target",
         ]
+        s_cfg = cfg.strategy
+        if account_line and s_cfg.runner_enabled:
+            lines.append(f"🏃 If momentum is still strong at +{tp_pct:g}%, hold with a trailing stop "
+                         f"{s_cfg.runner_trail_pct:g}% below the peak (never below +{tp_pct:g}%).")
         if trade.costs_eat_target:
             lines.append("⚠️ <b>Costs would eat most of the profit target</b> - consider skipping or a smaller size")
 
+    if account_line:
+        lines += ["", "📒 " + e(account_line)]
     if s.url:
         lines += ["", f'<a href="{e(s.url, quote=True)}">Chart on DexScreener</a>']
     return "\n".join(lines)
@@ -326,6 +351,8 @@ class AlertManager:
         self.sender = AlertSender(cfg, http, dry_run)
         self.dry_run = dry_run
         self.safety_checker = safety_checker
+        from .strategy import Strategy
+        self.strategy = Strategy(cfg, storage) if cfg.strategy.enabled else None
 
     def eligible(self, row: ScanRow, now: float) -> str | None:
         """None if the row should alert, else the reason it shouldn't."""
@@ -354,10 +381,36 @@ class AlertManager:
             return []
         ready = [r for r in rows if self.eligible(r, now) is None]
         ready.sort(key=lambda r: r.composite.score, reverse=True)
+        state = None
+        if self.strategy is not None:
+            state = self.strategy.state(now)
+            if state.limit_hit:
+                self._notify_daily_limit(state, now)
+                return []
         sent_ids = []
-        for row in ready[: self.cfg.alerts.max_alerts_per_scan]:
-            trade = suggest_trade(row.snap, self.cfg.trade)
-            text = format_alert(row, trade, self.cfg)
+        for row in ready:
+            if len(sent_ids) >= self.cfg.alerts.max_alerts_per_scan:
+                break
+            extra = {}
+            account_line = None
+            if self.strategy is not None:
+                liq = row.snap.liquidity_usd
+                decision = self.strategy.decide(
+                    row, state, lambda size: trade_cost_pct(self.cfg.trade, size, liq), now)
+                if not decision.ok:
+                    log.info("Strategy skipped %s %s: %s", row.snap.chain, row.snap.symbol, decision.reason)
+                    continue
+                trade = suggest_trade(row.snap, self.cfg.trade, decision.position_usd,
+                                      decision.take_profit_pct, decision.stop_loss_pct)
+                if trade is None:
+                    continue
+                self.strategy.register(state, row, decision, trade.cost_pct)
+                account_line = self.strategy.status_line(state)
+                extra = dict(strategy_trade=1, trail_pct=self.cfg.strategy.runner_trail_pct,
+                             runner_hold_hours=self.cfg.strategy.runner_max_hold_hours)
+            else:
+                trade = suggest_trade(row.snap, self.cfg.trade)
+            text = format_alert(row, trade, self.cfg, account_line)
             signals = list(row.momentum.signals) + sorted(row.feeds) + [f"safety_{row.safety.status.lower()}"]
             if row.social is not None and row.social.score >= 50:
                 signals.append("social_buzz")
@@ -373,7 +426,7 @@ class AlertManager:
                 est_cost_pct=trade.cost_pct if trade else None,
                 message=text, pair_address=row.snap.pair_address,
                 liquidity_usd=row.snap.liquidity_usd, risk=row.composite.risk,
-                dry_run=int(self.dry_run),
+                dry_run=int(self.dry_run), **extra,
             )
             if self.sender.send(text):
                 self.storage.mark_delivered(alert_id)
@@ -381,3 +434,19 @@ class AlertManager:
                      row.composite.score, row.safety.status, alert_id)
             sent_ids.append(alert_id)
         return sent_ids
+
+    def _notify_daily_limit(self, state, now: float) -> None:
+        """Tell the user once per day that the loss limit stopped new trades."""
+        from datetime import datetime
+        today = datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+        if self.storage.get_value("limit_notice_date") == today:
+            return
+        self.storage.set_value("limit_notice_date", today)
+        pct = self.cfg.strategy.daily_loss_limit_pct
+        self.sender.send(
+            f"🛑 <b>Daily loss limit reached</b>\n"
+            f"Today: -${state.loss_today:,.2f} (limit ${state.daily_limit_usd:,.2f} = {pct:g}% of "
+            f"${state.day_start_balance:,.2f}).\n"
+            f"No new paper trades until midnight. Open trades keep running to their exits.\n"
+            f"Paper account: ${state.balance:,.2f}", label="DAILY LIMIT")
+        log.warning("Daily loss limit reached: -$%.2f of $%.2f", state.loss_today, state.daily_limit_usd)

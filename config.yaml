@@ -37,7 +37,10 @@ chains:
     geckoterminal_id: solana
 
   - name: Ethereum
-    enabled: true
+    # Off for the small-trade strategy: one Ethereum swap often costs $1-5 in
+    # network fees, which eats a 5-30% win on a $10 trade. Turn back on
+    # (true) if you trade bigger sizes.
+    enabled: false
     type: evm
     dexscreener_id: ethereum
     geckoterminal_id: eth
@@ -310,7 +313,8 @@ alerts:
   # false = no instant alerts (you'll still get the hourly digest below).
   instant: true
   # Send an alert when the combined score reaches this (0-100).
-  score_threshold: 70
+  # 60 suits the high-volume strategy below; raise it for fewer, stronger alerts.
+  score_threshold: 60
   # After alerting on a token, stay quiet about it for this many minutes...
   cooldown_minutes: 60
   # ...unless its score rises by at least this many points again.
@@ -347,15 +351,82 @@ summaries:
 
 
 # ---------------------------------------------------------------------
+# YOUR TRADING STRATEGY - a $50 PAPER account that follows your rules.
+# Every alert is a paper trade from this account. Nothing is ever bought.
+# ---------------------------------------------------------------------
+strategy:
+  # true = follow the rules below. false = plain alerts with the fixed
+  # take-profit/stop-loss in the "trade:" section further down.
+  enabled: true
+
+  # The pretend account the paper trades come from (US dollars).
+  starting_balance_usd: 50
+  # Size of each trade. Small trades = many can be open at once and no
+  # single trade can blow up the account.
+  position_usd: 10
+  # Skip a trade if less than this much free cash is left in the account.
+  min_position_usd: 2
+  # Most trades open at the same time.
+  max_open_trades: 5
+
+  # RULE: never lose more than this percent of the account in one day.
+  # Measured against the balance at midnight. Before every trade the bot
+  # checks: today's losses + the worst case of trades still open + this
+  # trade's planned loss must stay under the limit. Once losses reach the
+  # limit, no new trades until midnight (you get a Telegram notice).
+  daily_loss_limit_pct: 15
+
+  # RULE: the goal is modest steady growth. Shown in summaries and the
+  # report; the bot never forces trades to reach it.
+  weekly_target_min_pct: 5
+  weekly_target_max_pct: 10
+
+  # RULE: many small wins. Take-profit and stop-loss (percent) depend on the
+  # token's risk rating: safer coins get smaller, more likely targets.
+  levels:
+    low:    {take_profit_pct: 8,  stop_loss_pct: 5}
+    medium: {take_profit_pct: 15, stop_loss_pct: 7}
+    high:   {take_profit_pct: 25, stop_loss_pct: 10}
+
+  # RULE: mostly low/medium risk. High-risk trades are limited per day;
+  # each high-risk WIN earns one extra for that day. Unused ones don't
+  # carry over to tomorrow.
+  high_risk_per_day: 5
+  high_risk_win_earns_extra: true
+
+  # RULE: only run past the target when the data strongly supports it.
+  # When a trade reaches its take-profit AND momentum is still strong, it
+  # isn't sold: a trailing stop follows the price up, never below the
+  # original target, and sells when the price drops trail_pct from its peak.
+  runner:
+    enabled: true
+    trail_pct: 8
+    # Momentum score (0-100) needed at the target to keep running.
+    min_momentum: 60
+    # A runner is closed after this many hours at the latest.
+    max_hold_hours: 12
+
+  # RULE: after taking profit on a token, only buy it again on a strong
+  # fresh setup.
+  reentry:
+    min_score: 80
+    # Price must be above where we last took profit.
+    require_new_high: true
+    # And volume must be spiking again.
+    require_volume_spike: true
+
+
+# ---------------------------------------------------------------------
 # SUGGESTED TRADE - included in every alert. Only a suggestion: this
 # tool never places trades.
 # ---------------------------------------------------------------------
 trade:
-  # Suggested position size in US dollars.
+  # Suggested position size in US dollars (only used when
+  # strategy.enabled is false - otherwise strategy.position_usd applies).
   position_usd: 50
-  # Take profit this many percent above the entry price.
+  # Take profit / stop loss in percent (only used when strategy.enabled is
+  # false - otherwise strategy.levels applies, by risk rating).
   take_profit_pct: 15
-  # Stop loss this many percent below the entry price.
   stop_loss_pct: 8
   # Assumed exchange + network fees for buying AND selling, in percent.
   round_trip_fee_pct: 1.0

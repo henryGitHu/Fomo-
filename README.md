@@ -241,6 +241,34 @@ hand, and small projects are often refused. Per this project's rules we
 skip sources that need approval rather than work around them. If Reddit
 ever approves you, Reddit support can be added.
 
+## Your trading strategy (paper account)
+
+The scanner follows your trading rules with a **$50 paper account**. Every
+alert is a paper trade from that account. **Nothing is ever bought**; the
+account shows how your rules would have done.
+
+| Your rule | How the bot applies it |
+|---|---|
+| Never lose more than 15% in a day | Before each trade: today's losses + the worst case of open trades + this trade's planned loss must stay within 15% of the balance at midnight. Once losses reach the limit, no new trades until midnight (you get a Telegram notice). |
+| Target 5–10% growth a week | Shown in every summary and in the report (weeks start Monday). The bot never forces trades to reach it. |
+| Many small wins, mostly low/medium risk | $10 per trade, up to 5 open. Targets by risk rating: **low** +8% / −5%, **medium** +15% / −7%, **high** +25% / −10%. |
+| 5 high-risk trades a day, +1 per high-risk win | A daily allowance that resets at midnight and doesn't carry over. |
+| Go past the target only when the data strongly supports it | "Runner": at the target, if momentum is still strong, the trade isn't sold. A trailing stop follows the price 8% below its peak, never below the target, for up to 12 hours. |
+| Re-enter after taking profit only on a strong setup | After a profit exit, the token needs score 80+, a price above the last exit **and** a new volume spike. |
+
+Ethereum is switched off for this strategy, because its network fees ($1–5
+per trade) eat small wins. All numbers are in the `strategy:` section of
+`config.yaml`. Set `strategy.enabled: false` to go back to plain alerts.
+
+`report.bat` (or `scanner report`) starts with an **account** section:
+balance, today against the loss limit, this week against the 5–10% goal, a
+week-by-week table, the high-risk and runner results, and how many days hit
+the loss limit.
+
+Honest limits: a stop-loss can't protect against a token collapsing between
+two price checks, so a single trade can occasionally lose more than planned.
+That's why each trade is only $10.
+
 ## Scheduled summaries (Telegram)
 
 On top of instant alerts, the scanner sends regular updates:

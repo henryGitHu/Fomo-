@@ -165,6 +165,34 @@ class AlertSettings:
 
 
 @dataclass
+class StrategyLevel:
+    take_profit_pct: float
+    stop_loss_pct: float
+
+
+@dataclass
+class StrategySettings:
+    enabled: bool
+    starting_balance_usd: float
+    position_usd: float
+    min_position_usd: float
+    max_open_trades: int
+    daily_loss_limit_pct: float
+    weekly_target_min_pct: float
+    weekly_target_max_pct: float
+    levels: dict[str, StrategyLevel]      # keys: LOW / MEDIUM / HIGH
+    high_risk_per_day: int
+    high_risk_win_earns_extra: bool
+    runner_enabled: bool
+    runner_trail_pct: float
+    runner_min_momentum: float
+    runner_max_hold_hours: float
+    reentry_min_score: float
+    reentry_require_new_high: bool
+    reentry_require_volume_spike: bool
+
+
+@dataclass
 class TradeSettings:
     position_usd: float
     take_profit_pct: float
@@ -225,6 +253,7 @@ class Config:
     scoring: ScoringSettings
     alerts: AlertSettings
     summaries: SummarySettings
+    strategy: StrategySettings
     trade: TradeSettings
     display: DisplaySettings
     storage: StorageSettings
@@ -376,6 +405,17 @@ def load_config(config_path: Path | str | None = None,
     alr = _section(raw, "alerts")
     trd = _section(raw, "trade")
     smr = _section(raw, "summaries")
+    stg = _section(raw, "strategy")
+    stg_levels = _section(stg, "levels")
+    stg_runner = _section(stg, "runner")
+    stg_re = _section(stg, "reentry")
+    levels = {}
+    for key in ("low", "medium", "high"):
+        lv = _section(stg_levels, key)
+        levels[key.upper()] = StrategyLevel(
+            take_profit_pct=_get(lv, f"strategy.levels.{key}", "take_profit_pct", float, minimum=0.5, maximum=1000),
+            stop_loss_pct=_get(lv, f"strategy.levels.{key}", "stop_loss_pct", float, minimum=0.5, maximum=95),
+        )
     daily_time = _get(smr, "summaries", "pnl_daily_time", str)
     if daily_time:
         import re as _re
@@ -512,6 +552,26 @@ def load_config(config_path: Path | str | None = None,
             pnl_chart=_get(smr, "summaries", "pnl_chart", bool),
             pnl_every_hours=_get(smr, "summaries", "pnl_every_hours", float, minimum=0.25),
             pnl_daily_time=daily_time,
+        ),
+        strategy=StrategySettings(
+            enabled=_get(stg, "strategy", "enabled", bool),
+            starting_balance_usd=_get(stg, "strategy", "starting_balance_usd", float, minimum=1),
+            position_usd=_get(stg, "strategy", "position_usd", float, minimum=0.5),
+            min_position_usd=_get(stg, "strategy", "min_position_usd", float, minimum=0),
+            max_open_trades=_get(stg, "strategy", "max_open_trades", int, minimum=1, maximum=100),
+            daily_loss_limit_pct=_get(stg, "strategy", "daily_loss_limit_pct", float, minimum=0.5, maximum=100),
+            weekly_target_min_pct=_get(stg, "strategy", "weekly_target_min_pct", float, minimum=0),
+            weekly_target_max_pct=_get(stg, "strategy", "weekly_target_max_pct", float, minimum=0),
+            levels=levels,
+            high_risk_per_day=_get(stg, "strategy", "high_risk_per_day", int, minimum=0),
+            high_risk_win_earns_extra=_get(stg, "strategy", "high_risk_win_earns_extra", bool),
+            runner_enabled=_get(stg_runner, "strategy.runner", "enabled", bool),
+            runner_trail_pct=_get(stg_runner, "strategy.runner", "trail_pct", float, minimum=0.5, maximum=90),
+            runner_min_momentum=_get(stg_runner, "strategy.runner", "min_momentum", float, minimum=0, maximum=100),
+            runner_max_hold_hours=_get(stg_runner, "strategy.runner", "max_hold_hours", float, minimum=4, maximum=72),
+            reentry_min_score=_get(stg_re, "strategy.reentry", "min_score", float, minimum=0, maximum=100),
+            reentry_require_new_high=_get(stg_re, "strategy.reentry", "require_new_high", bool),
+            reentry_require_volume_spike=_get(stg_re, "strategy.reentry", "require_volume_spike", bool),
         ),
         trade=TradeSettings(
             position_usd=_get(trd, "trade", "position_usd", float, minimum=1),

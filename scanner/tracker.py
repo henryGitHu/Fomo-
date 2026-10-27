@@ -23,6 +23,8 @@ import time
 
 from .config import Config
 from .storage import Storage
+from .strategy import (HIT_EXPIRED, HIT_NO_DATA, HIT_OPEN, HIT_RUNNING, HIT_SL, HIT_TP,
+                       HIT_TRAIL)
 
 log = logging.getLogger(__name__)
 
@@ -31,8 +33,16 @@ CHECKPOINTS = (("price_5m", 5 * 60), ("price_15m", 15 * 60),
 HORIZON = 4 * 3600          # trade is closed at the 4h price if neither TP nor SL hit
 GRACE = 30 * 60             # extra time allowed to collect the final price
 
-HIT_TP, HIT_SL, HIT_EXPIRED, HIT_OPEN, HIT_NO_DATA = "TP", "SL", "EXPIRED", "OPEN", "NO_DATA"
-FINISHED = (HIT_TP, HIT_SL, HIT_EXPIRED)
+FINISHED = (HIT_TP, HIT_SL, HIT_EXPIRED, HIT_TRAIL)
+STILL_OPEN = (None, HIT_OPEN, HIT_RUNNING)
+
+
+def _col(row, key, default=None):
+    try:
+        v = row[key]
+    except (KeyError, IndexError):
+        return default
+    return default if v is None else v
 
 
 def _max_lag(offset: float) -> float:
@@ -41,14 +51,38 @@ def _max_lag(offset: float) -> float:
     return max(180.0, min(offset * 0.5, GRACE))
 
 
+def first_tp_cross(alert, observations) -> float | None:
+    """Time the price first reached take-profit (before any stop-loss), else None."""
+    start, tp, sl = alert["ts"], alert["take_profit_usd"], alert["stop_loss_usd"]
+    if not (tp and sl):
+        return None
+    for t, p in sorted(observations):
+        if not (start < t <= start + HORIZON):
+            continue
+        if p <= sl:
+            return None
+        if p >= tp:
+            return t
+    return None
+
+
 def evaluate(alert, observations: list[tuple[float, float]], now: float,
              default_cost_pct: float) -> dict:
-    """Pure function: alert row + price readings -> outcome fields."""
+    """Pure function: alert row + price readings -> outcome fields.
+
+    Runner trades (alert["runner_state"] == 1): at take-profit the trade isn't
+    sold; a trailing stop follows the peak (never below the take-profit level)
+    and the trade closes when the price falls trail_pct from its peak, or at
+    runner_hold_hours."""
     start = alert["ts"]
     entry = alert["price_usd"]
     tp = alert["take_profit_usd"]
     sl = alert["stop_loss_usd"]
-    readings = sorted((t, p) for t, p in observations if start < t <= start + HORIZON + GRACE)
+    runner = _col(alert, "runner_state") == 1
+    trail = float(_col(alert, "trail_pct", 8.0))
+    run_horizon = float(_col(alert, "runner_hold_hours", 12.0)) * 3600 if runner else HORIZON
+    window = max(HORIZON, run_horizon)
+    readings = sorted((t, p) for t, p in observations if start < t <= start + window + GRACE)
     obs = [(t, p) for t, p in readings if t <= start + HORIZON]   # the trade's lifetime
 
     out: dict = {name: None for name, _ in CHECKPOINTS}
@@ -63,6 +97,9 @@ def evaluate(alert, observations: list[tuple[float, float]], now: float,
     hit, hit_ts, gross = HIT_OPEN, None, None
     if entry and tp and sl:
         for t, p in obs:
+            if p >= tp and runner:
+                hit, hit_ts, gross = _run(readings, t, tp, trail, entry, start + run_horizon, now)
+                break
             if p >= tp:
                 hit, hit_ts, gross = HIT_TP, t, (tp / entry - 1) * 100
                 break
@@ -91,26 +128,80 @@ def evaluate(alert, observations: list[tuple[float, float]], now: float,
     return out
 
 
+def _run(readings, t0, tp, trail_pct, entry, end, now):
+    """Trailing-stop phase of a runner, from the take-profit crossing at t0."""
+    peak = tp
+    last_t = t0
+    for t, p in readings:
+        if t < t0 or t > end:
+            continue
+        last_t, last_p = t, p
+        peak = max(peak, p)
+        stop = max(tp, peak * (1 - trail_pct / 100))
+        if t > t0 and p <= stop:
+            return HIT_TRAIL, t, (p / entry - 1) * 100       # sold at the price actually seen
+    if now >= end:
+        # Time limit: close at the last price seen in the window.
+        prices = [(t, p) for t, p in readings if t0 <= t <= end]
+        t, p = prices[-1] if prices else (t0, tp)
+        return HIT_TRAIL, t, (p / entry - 1) * 100
+    return HIT_RUNNING, None, None
+
+
 class Tracker:
     def __init__(self, cfg: Config, storage: Storage, dexscreener=None):
         self.cfg = cfg
         self.storage = storage
         self.dexscreener = dexscreener
 
+    def _max_window(self) -> float:
+        return max(HORIZON, self.cfg.strategy.runner_max_hold_hours * 3600) + GRACE
+
     def update(self, now: float | None = None) -> int:
         """Fetch fresh prices for live alerts and re-evaluate. Returns # evaluated."""
         now = now or time.time()
-        alerts = self.storage.alerts_to_track(since=now - HORIZON - GRACE)
+        alerts = self.storage.alerts_to_track(since=now - self._max_window())
         if not alerts:
             return 0
-        self._fetch_prices([a for a in alerts if now - a["ts"] <= HORIZON + GRACE], now)
+        live = [a for a in alerts if _col(a, "cur_hit") in STILL_OPEN
+                and now - a["ts"] <= self._max_window()]
+        self._fetch_prices(live, now)
         for a in alerts:
             obs = self.storage.price_observations(a["id"], a["chain"], a["token_address"],
-                                                  a["ts"], a["ts"] + HORIZON + GRACE)
+                                                  a["ts"], a["ts"] + self._max_window())
+            if _col(a, "strategy_trade") == 1 and _col(a, "runner_state") is None:
+                crossed = first_tp_cross(a, obs)
+                if crossed is not None:
+                    state = 1 if self._runner_ok(a, now) else 0
+                    self.storage.set_runner_state(a["id"], state)
+                    a = dict(a)
+                    a["runner_state"] = state
+                    if state:
+                        log.info("Runner: %s %s hit its target with strong momentum - trailing",
+                                 a["chain"], a["symbol"])
             fields = evaluate(a, obs, now, self.cfg.trade.round_trip_fee_pct)
             self.storage.save_outcome(a["id"], **fields)
         self.storage.commit()
         return len(alerts)
+
+    def _runner_ok(self, alert, now: float) -> bool:
+        """Is momentum still strong right now? (rule: only run past the target
+        when the data strongly supports it)"""
+        s = self.cfg.strategy
+        if not (s.enabled and s.runner_enabled and _col(alert, "strategy_trade") == 1):
+            return False
+        from .scoring import momentum_score
+        hist = self.storage.snapshot_history(alert["chain"], alert["token_address"],
+                                             since=now - self.cfg.momentum.baseline_minutes * 60 - 600,
+                                             before=now + 1)
+        if not hist or now - hist[-1].ts > 600:
+            return False                      # no fresh data -> take the profit
+        snap = hist[-1]
+        mom = momentum_score(snap, hist[:-1], self.cfg.momentum)
+        return (mom.score >= s.runner_min_momentum
+                and (snap.price_change_m5 or 0) > 0
+                and (mom.buy_ratio_m5 or 0) >= 0.55
+                and not mom.giant_candle)
 
     def _fetch_prices(self, alerts: list[sqlite3.Row], now: float) -> None:
         if self.dexscreener is None or not alerts:
@@ -128,7 +219,12 @@ class Tracker:
             except Exception:
                 log.exception("Paper-trade price lookup failed for %s", chain)
                 continue
+            seen = set()
             for a in items:
                 snap = snaps.get(a["token_address"])
                 if snap and snap.price_usd:
                     self.storage.add_alert_price(a["id"], now, snap.price_usd)
+                    if a["token_address"] not in seen:     # keep momentum data for runner decisions
+                        snap.ts = now
+                        self.storage.add_snapshots([snap])
+                        seen.add(a["token_address"])

@@ -143,6 +143,10 @@ _MIGRATIONS = [
     ("alerts", "liquidity_usd", "REAL"),
     ("alerts", "risk", "TEXT"),
     ("alerts", "dry_run", "INTEGER DEFAULT 0"),
+    ("alerts", "strategy_trade", "INTEGER DEFAULT 0"),   # 1 = a trade in the strategy's paper account
+    ("alerts", "runner_state", "INTEGER"),               # NULL undecided, 0 normal exit, 1 runner
+    ("alerts", "trail_pct", "REAL"),
+    ("alerts", "runner_hold_hours", "REAL"),
 ]
 
 
@@ -263,7 +267,7 @@ class Storage:
     def alerts_to_track(self, since: float) -> list[sqlite3.Row]:
         """Alerts still inside their tracking window, plus any never evaluated."""
         return self.conn.execute(
-            """SELECT a.* FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+            """SELECT a.*, o.hit AS cur_hit FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
                WHERE a.ts >= ? OR o.alert_id IS NULL ORDER BY a.ts""",
             (since,),
         ).fetchall()
@@ -339,3 +343,24 @@ class Storage:
 
     def prune_mentions(self, older_than: float) -> int:
         return self.conn.execute("DELETE FROM mentions WHERE ts < ?", (older_than,)).rowcount
+
+    def set_runner_state(self, alert_id: int, state: int) -> None:
+        self.conn.execute("UPDATE alerts SET runner_state = ? WHERE id = ?", (state, alert_id))
+        self.conn.commit()
+
+    def strategy_trades(self) -> list[sqlite3.Row]:
+        """Every trade in the strategy's paper account, with its outcome."""
+        return self.conn.execute(
+            """SELECT a.*, o.hit, o.hit_ts, o.gross_return_pct, o.net_return_pct
+               FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+               WHERE a.strategy_trade = 1 ORDER BY a.ts"""
+        ).fetchall()
+
+    def last_strategy_trade(self, chain: str, address: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """SELECT a.*, o.hit, o.hit_ts, o.gross_return_pct, o.net_return_pct
+               FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+               WHERE a.strategy_trade = 1 AND a.chain = ? AND a.token_address = ?
+               ORDER BY a.ts DESC LIMIT 1""",
+            (chain, address),
+        ).fetchone()

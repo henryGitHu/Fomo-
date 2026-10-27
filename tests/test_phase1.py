@@ -55,6 +55,10 @@ def fake_transport(calls: list[str]):
 
 
 def fast(cfg):
+    # Mechanics tests: every chain on, plain alerts (strategy has its own tests).
+    for c in cfg.chains:
+        c.enabled = True
+    cfg.strategy.enabled = False
     cfg.dexscreener.requests_per_minute_discovery = 60
     cfg.dexscreener.requests_per_minute_pairs = 300
     cfg.geckoterminal.requests_per_minute = 30
@@ -69,7 +73,9 @@ def no_sleep(monkeypatch):
 # ---------------------------------------------------------------- config
 
 def test_config_loads_defaults(cfg):
-    assert [c.name for c in cfg.enabled_chains] == ["Solana", "Ethereum", "Base", "BNB Chain", "Arbitrum"]
+    # Ethereum is off by default (network fees eat small trades).
+    assert [c.name for c in cfg.enabled_chains] == ["Solana", "Base", "BNB Chain", "Arbitrum"]
+    assert [c.name for c in cfg.chains] == ["Solana", "Ethereum", "Base", "BNB Chain", "Arbitrum"]
     assert cfg.filters.min_liquidity_usd == 25000
     assert cfg.filters.min_volume_1h_usd == 50000
     assert cfg.filters.min_pair_age_minutes == 10

@@ -177,6 +177,7 @@ class StrategySettings:
     position_usd: float
     min_position_usd: float
     max_open_trades: int
+    min_trade_score: float
     daily_loss_limit_pct: float
     weekly_target_min_pct: float
     weekly_target_max_pct: float
@@ -559,6 +560,7 @@ def load_config(config_path: Path | str | None = None,
             position_usd=_get(stg, "strategy", "position_usd", float, minimum=0.5),
             min_position_usd=_get(stg, "strategy", "min_position_usd", float, minimum=0),
             max_open_trades=_get(stg, "strategy", "max_open_trades", int, minimum=1, maximum=100),
+            min_trade_score=_get(stg, "strategy", "min_trade_score", float, minimum=0, maximum=100),
             daily_loss_limit_pct=_get(stg, "strategy", "daily_loss_limit_pct", float, minimum=0.5, maximum=100),
             weekly_target_min_pct=_get(stg, "strategy", "weekly_target_min_pct", float, minimum=0),
             weekly_target_max_pct=_get(stg, "strategy", "weekly_target_max_pct", float, minimum=0),

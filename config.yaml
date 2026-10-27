@@ -369,6 +369,11 @@ strategy:
   # Most trades open at the same time.
   max_open_trades: 5
 
+  # RULE: quality over quantity - only take a trade when the token's
+  # combined alert score (0-100) is at least this. Lower it (e.g. 75) if
+  # the report shows too few trades.
+  min_trade_score: 83
+
   # RULE: never lose more than this percent of the account in one day.
   # Measured against the balance at midnight. Before every trade the bot
   # checks: today's losses + the worst case of trades still open + this
@@ -409,7 +414,8 @@ strategy:
   # RULE: after taking profit on a token, only buy it again on a strong
   # fresh setup.
   reentry:
-    min_score: 80
+    # Must be stricter than min_trade_score above.
+    min_score: 90
     # Price must be above where we last took profit.
     require_new_high: true
     # And volume must be spiking again.

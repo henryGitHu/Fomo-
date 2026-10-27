@@ -103,8 +103,11 @@ class Summaries:
         good = [r for r in rows if r.filters.passed and r.safety is not None
                 and r.safety.status != STATUS_FAIL and r.composite is not None]
         good.sort(key=lambda r: r.composite.score, reverse=True)
+        threshold = self.cfg.alerts.score_threshold
+        if self.cfg.strategy.enabled:
+            threshold = max(threshold, self.cfg.strategy.min_trade_score)
         lines = [f"🕐 <b>Top tokens right now</b> · {datetime.fromtimestamp(now):%H:%M}",
-                 f"<i>Alert threshold is {self.cfg.alerts.score_threshold:.0f}. "
+                 f"<i>Trades need a score of {threshold:.0f}+. "
                  f"These are watch-list ideas, not alerts.</i>", ""]
         if not good:
             lines.append("No tokens passed the filters and safety checks in the latest scan.")

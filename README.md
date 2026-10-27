@@ -249,12 +249,13 @@ account shows how your rules would have done.
 
 | Your rule | How the bot applies it |
 |---|---|
+| Only trade tokens scoring 83+ | A token's combined alert score must be at least 83 (`min_trade_score`) before it becomes a trade. |
 | Never lose more than 15% in a day | Before each trade: today's losses + the worst case of open trades + this trade's planned loss must stay within 15% of the balance at midnight. Once losses reach the limit, no new trades until midnight (you get a Telegram notice). |
 | Target 5–10% growth a week | Shown in every summary and in the report (weeks start Monday). The bot never forces trades to reach it. |
 | Many small wins, mostly low/medium risk | $10 per trade, up to 5 open. Targets by risk rating: **low** +8% / −5%, **medium** +15% / −7%, **high** +25% / −10%. |
 | 5 high-risk trades a day, +1 per high-risk win | A daily allowance that resets at midnight and doesn't carry over. |
 | Go past the target only when the data strongly supports it | "Runner": at the target, if momentum is still strong, the trade isn't sold. A trailing stop follows the price 8% below its peak, never below the target, for up to 12 hours. |
-| Re-enter after taking profit only on a strong setup | After a profit exit, the token needs score 80+, a price above the last exit **and** a new volume spike. |
+| Re-enter after taking profit only on a strong setup | After a profit exit, the token needs score 90+, a price above the last exit **and** a new volume spike. |
 
 Ethereum is switched off for this strategy, because its network fees ($1–5
 per trade) eat small wins. All numbers are in the `strategy:` section of

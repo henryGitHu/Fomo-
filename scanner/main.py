@@ -28,6 +28,7 @@ from .sources.geckoterminal import GeckoTerminal
 from .storage import Storage
 from .summaries import Summaries
 from .tracker import Tracker
+from .learning import Learner
 
 log = logging.getLogger("scanner")
 
@@ -68,6 +69,7 @@ class Scanner:
         self.alerts = AlertManager(cfg, storage, http, dry_run, self.safety)
         self.tracker = Tracker(cfg, storage, self.dexscreener)
         self.summaries = Summaries(cfg, storage, self.alerts.sender)
+        self.learner = Learner(cfg, storage)
         self.telegram = (TelegramSource(cfg, storage)
                          if cfg.telegram_channels.enabled and cfg.telegram_channels.channels else None)
         self._telegram_tried = False
@@ -172,6 +174,10 @@ class Scanner:
             self.tracker.update(now)
         except Exception:
             log.exception("Paper-trade tracking failed")
+        try:
+            self.learner.update(now, self.alerts.sender)
+        except Exception:
+            log.exception("Self-learning update failed")
         try:
             self.summaries.maybe_send(rows, now)
         except Exception:

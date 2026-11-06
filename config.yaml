@@ -423,6 +423,46 @@ strategy:
 
 
 # ---------------------------------------------------------------------
+# SELF-LEARNING - after every paper trade closes, the bot reviews it
+# (what went well, what went wrong, the lesson) and keeps watching the
+# price for the rest of the 4 hours to see what would have happened.
+# Every few hours it re-analyses ALL past trades and:
+#   * replays them with other take-profit / stop-loss levels and moves
+#     each risk level's levels a little toward what actually worked;
+#   * finds entry patterns that keep losing (e.g. "already up 40% in the
+#     last hour") and makes those trades need a higher score.
+# Guardrails it can never cross: safety checks, the daily loss limit,
+# trade size and min_trade_score above are never loosened; targets stay
+# inside the ranges below; nothing changes until there are enough trades.
+# You get a Telegram message explaining every change.
+# ---------------------------------------------------------------------
+learning:
+  enabled: true
+  # auto = apply what it learns. suggest = only tell you, change nothing.
+  mode: auto
+  # How often to re-analyse every past trade.
+  retrain_every_hours: 6
+  # Closed trades (per risk level) needed before it changes that level's
+  # take-profit / stop-loss. More = slower but more trustworthy.
+  min_trades_for_exits: 20
+  # Trades needed before it judges an entry pattern.
+  min_trades_per_pattern: 12
+  # Most score points a losing pattern can cost a token (0-50).
+  max_score_penalty: 20
+  # Allowed ranges for learned take-profit and stop-loss (percent).
+  tp_min_pct: 5
+  tp_max_pct: 30
+  sl_min_pct: 3
+  sl_max_pct: 15
+  # Biggest change (percentage points) to a level per re-analysis.
+  max_step_pct: 3
+  # Telegram: a short review of each trade when it closes.
+  send_trade_reviews: true
+  # Telegram: a message whenever the bot changes what it does.
+  send_updates: true
+
+
+# ---------------------------------------------------------------------
 # SUGGESTED TRADE - included in every alert. Only a suggestion: this
 # tool never places trades.
 # ---------------------------------------------------------------------

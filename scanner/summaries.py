@@ -67,6 +67,12 @@ class Summaries:
                 f"{s.weekly_target_min_pct:g}-{s.weekly_target_max_pct:g}% · {goal}",
                 f"Open trades {st.open_count}/{s.max_open_trades} · high-risk trades left today {st.high_allowance}"]
 
+    def lessons(self, now: float) -> str | None:
+        if not (self.cfg.learning.enabled and self.cfg.strategy.enabled):
+            return None
+        from .learning import Learner
+        return Learner(self.cfg, self.storage).lessons_text(now)
+
     # ------------------------------------------------------------------ scheduling
     def _due(self, key: str, every_seconds: float, now: float) -> bool:
         last = float(self.storage.get_value(key, "0") or 0)
@@ -87,6 +93,9 @@ class Summaries:
             due_at = datetime.fromtimestamp(now).replace(hour=hh, minute=mm, second=0).timestamp()
             if now >= due_at and self.storage.get_value(KEY_DAILY) != today:
                 self.send_pnl(now, end_of_day=True)
+                lessons = self.lessons(now)
+                if lessons:
+                    self.sender.send(lessons, label="TODAY'S LESSONS")
                 self.storage.set_value(KEY_DAILY, today)
                 self.storage.set_value(KEY_PNL, str(now))
                 sent.append("daily")

@@ -17,7 +17,9 @@ Every alert under the strategy is a paper trade from a pretend account
     volume spiking again).
 
 Take-profit / stop-loss come from the token's risk rating (LOW / MEDIUM /
-HIGH). "Today" and "this week" follow the computer's clock; weeks start on
+HIGH) - or, once the self-learning layer (learning.py) has enough trades,
+from the levels it learned. Entry patterns that keep losing make a token
+need extra score points (the minimum score itself is never lowered). "Today" and "this week" follow the computer's clock; weeks start on
 Monday.
 """
 from __future__ import annotations
@@ -104,6 +106,9 @@ class Decision:
     position_usd: float = 0.0
     take_profit_pct: float = 0.0
     stop_loss_pct: float = 0.0
+    features: dict | None = None     # what the token looked like (kept for the learner)
+    learn_adjust: float = 0.0        # score points the learner added/removed
+    learn_note: str = ""
 
 
 class Strategy:
@@ -111,9 +116,17 @@ class Strategy:
         self.cfg = cfg
         self.s = cfg.strategy
         self.storage = storage
+        from .learning import Learner          # late import: learning uses tracker -> strategy
+        self.learner = Learner(cfg, storage)
 
     def level(self, risk: str):
+        learned = self.learner.level(risk)
+        if learned is not None:
+            return learned
         return self.s.levels.get((risk or "HIGH").upper(), self.s.levels["HIGH"])
+
+    def is_learned(self, risk: str) -> bool:
+        return self.learner.level(risk) is not None
 
     # ------------------------------------------------------------------ account
     def state(self, now: float | None = None) -> AccountState:
@@ -172,6 +185,13 @@ class Strategy:
         score = row.composite.score if row.composite else 0
         if score < self.s.min_trade_score:
             return Decision(False, f"score {score:.0f} is below the {self.s.min_trade_score:.0f} minimum for trades")
+        from .learning import features_from_row
+        features = features_from_row(row, now or time.time())
+        adj, why = self.learner.adjustment(features)
+        if adj < 0 and score + adj < self.s.min_trade_score:
+            return Decision(False, f"learned caution: {'; '.join(why)} lost money before "
+                                   f"(score {score:.0f} {adj:+.0f} = {score + adj:.0f}, "
+                                   f"needs {self.s.min_trade_score:.0f})")
         if state.limit_hit:
             return Decision(False, "daily loss limit reached")
         if key in state.open_tokens:
@@ -189,7 +209,13 @@ class Strategy:
         why = self._reentry_block(row, key)
         if why:
             return Decision(False, why)
-        return Decision(True, "", size, lvl.take_profit_pct, lvl.stop_loss_pct)
+        notes = []
+        if self.is_learned(risk):
+            notes.append(f"learned {risk} levels +{lvl.take_profit_pct:g}% / -{lvl.stop_loss_pct:g}%")
+        if adj < 0:
+            notes.append(f"passed learned caution ({'; '.join(why)}: {adj:+.0f} pts)")
+        return Decision(True, "", size, lvl.take_profit_pct, lvl.stop_loss_pct,
+                        features=features, learn_adjust=adj, learn_note=" · ".join(notes))
 
     def _reentry_block(self, row, key) -> str:
         last = self.storage.last_strategy_trade(*key)

@@ -38,6 +38,10 @@ Right now, every scan does this:
 8. **Paper-trades every alert.** It follows the price for 4 hours and records
    whether the suggested take-profit or stop-loss would have hit first, and
    the result after costs. `report.bat` sums it all up.
+9. **Learns from every trade.** Each closed trade gets a review (what went
+   well, what went wrong, the lesson), and every 6 hours the bot re-analyses
+   all past trades to tune its exits and avoid entry patterns that keep
+   losing. See "Self-learning" below.
 
 ---
 
@@ -270,6 +274,59 @@ Honest limits: a stop-loss can't protect against a token collapsing between
 two price checks, so a single trade can occasionally lose more than planned.
 That's why each trade is only $10.
 
+## Self-learning (the bot improves from its own trades)
+
+After every paper trade closes, the bot **reviews it**:
+
+- how far it went up and down while it was open,
+- what it did **after** the exit (the bot keeps watching the price for the
+  rest of the 4 hours),
+- what went well, what went wrong, and the lesson. For example: "stopped
+  out, then climbed to +20% – the stop was inside this coin's normal
+  swings", "bought after it was already up 55% in the hour – likely late",
+  "dumped within minutes", "nearly hit the target, then reversed", "the
+  stop saved us – it fell to −50% afterwards", "kept running after we sold".
+
+You get each review on Telegram when the trade closes, and a **"Today's
+lessons"** message after the end-of-day chart.
+
+Every 6 hours it **re-analyses every past trade** and improves itself:
+
+1. **Exits.** For each risk level it replays the real recorded prices of
+   past trades with other take-profit / stop-loss pairs (+5% to +30%,
+   −3% to −15%). If another pair would clearly have done better (by at
+   least 1% per trade, in both the older and the newer half of the trades),
+   it moves that level **a few points** toward it. Needs 20 replayable
+   trades per risk level first.
+2. **Entries.** Trades are grouped by what the token looked like at entry:
+   1-hour run-up, 5-minute spike, giant candle, buyer share, volume,
+   pool age, liquidity, risk rating, safety, Telegram buzz, chain, time of
+   day and score band. A group that keeps losing compared to the other
+   trades (12+ trades) makes similar tokens need **extra score points**,
+   up to 20, growing 5 points at a time. If the group starts winning, the
+   penalty is lifted again.
+
+Every change comes to Telegram with the reason ("🧠 The bot learned
+something"), and is kept in the report.
+
+**What learning can never change:** safety checks, the 15% daily loss
+limit, the $10 trade size, max open trades, and the 78 minimum score.
+Learning can only make the bot *pickier* about entries, never looser.
+
+See what it has learned any time:
+
+- Windows: double-click `review.bat` (add `--retrain` to re-analyse right now)
+- Server: `scanner review` (or `scanner learn-now` to re-analyse right now)
+
+Settings are in the `learning:` section of `config.yaml`. Set
+`mode: suggest` to have it only *tell* you what it would change, or
+`enabled: false` to switch it off.
+
+Honest limits: with few trades, patterns can be luck. That's why it waits
+for 12–20 trades, changes in small steps and checks that an improvement
+holds in both older and newer trades. Past results never guarantee the
+next trade.
+
 ## Scheduled summaries (Telegram)
 
 On top of instant alerts, the scanner sends regular updates:
@@ -339,6 +396,8 @@ laptop at all.
 | `scanner status` | Is it running? |
 | `scanner logs` | Watch it live (Ctrl+C stops watching; the scanner keeps running) |
 | `scanner report` | Paper-trading report |
+| `scanner review` | What the bot has learned + the latest trade reviews |
+| `scanner learn-now` | Re-analyse every trade right now |
 | `scanner edit-config` | Change settings, then restart automatically |
 | `scanner telegram-login` | One-time login for Telegram channel reading |
 | `scanner update` | Get the latest version |

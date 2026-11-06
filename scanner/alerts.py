@@ -406,10 +406,15 @@ class AlertManager:
                     continue
                 self.strategy.register(state, row, decision, trade.cost_pct)
                 account_line = self.strategy.status_line(state)
+                if decision.learn_note:
+                    account_line += f"\n🧠 {decision.learn_note}"
                 extra = dict(strategy_trade=1, trail_pct=self.cfg.strategy.runner_trail_pct,
-                             runner_hold_hours=self.cfg.strategy.runner_max_hold_hours)
+                             runner_hold_hours=self.cfg.strategy.runner_max_hold_hours,
+                             features=json.dumps(decision.features), learn_adjust=decision.learn_adjust)
             else:
+                from .learning import features_from_row
                 trade = suggest_trade(row.snap, self.cfg.trade)
+                extra = dict(features=json.dumps(features_from_row(row, now)))
             text = format_alert(row, trade, self.cfg, account_line)
             signals = list(row.momentum.signals) + sorted(row.feeds) + [f"safety_{row.safety.status.lower()}"]
             if row.social is not None and row.social.score >= 50:

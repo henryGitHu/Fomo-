@@ -194,6 +194,23 @@ class StrategySettings:
 
 
 @dataclass
+class LearningSettings:
+    enabled: bool = True
+    mode: str = "auto"                  # auto = apply what it learns, suggest = only tell you
+    retrain_every_hours: float = 6
+    min_trades_for_exits: int = 20
+    min_trades_per_pattern: int = 12
+    max_score_penalty: float = 20
+    tp_min_pct: float = 5
+    tp_max_pct: float = 30
+    sl_min_pct: float = 3
+    sl_max_pct: float = 15
+    max_step_pct: float = 3
+    send_trade_reviews: bool = True
+    send_updates: bool = True
+
+
+@dataclass
 class TradeSettings:
     position_usd: float
     take_profit_pct: float
@@ -261,6 +278,7 @@ class Config:
     network: NetworkSettings
     logging: LoggingSettings
     secrets: dict[str, str | None] = field(default_factory=dict)
+    learning: LearningSettings = field(default_factory=LearningSettings)
 
     @property
     def enabled_chains(self) -> list[Chain]:
@@ -602,6 +620,42 @@ def load_config(config_path: Path | str | None = None,
         ),
         secrets=secrets,
     )
+    cfg.learning = _learning(raw)
     if not cfg.dexscreener.enabled and not cfg.geckoterminal.enabled:
         raise ConfigError("Both DexScreener and GeckoTerminal are disabled - enable at least one.")
     return cfg
+
+
+def _learning(raw: dict) -> LearningSettings:
+    """The learning: section is optional (older config files don't have it)."""
+    sec = raw.get("learning")
+    if sec is None:
+        return LearningSettings()
+    if not isinstance(sec, dict):
+        raise ConfigError("'learning:' in config.yaml should contain indented settings.")
+    d = LearningSettings()
+    p = "learning"
+
+    def opt(key, kind, **kw):
+        return _get(sec, p, key, kind, **kw) if key in sec else getattr(d, key)
+
+    mode = str(opt("mode", str)).strip().lower()
+    if mode not in ("auto", "suggest"):
+        raise ConfigError(f"'learning.mode' must be auto or suggest (got {mode!r}).")
+    out = LearningSettings(
+        enabled=opt("enabled", bool), mode=mode,
+        retrain_every_hours=opt("retrain_every_hours", float, minimum=0.5, maximum=168),
+        min_trades_for_exits=opt("min_trades_for_exits", int, minimum=5),
+        min_trades_per_pattern=opt("min_trades_per_pattern", int, minimum=5),
+        max_score_penalty=opt("max_score_penalty", float, minimum=0, maximum=50),
+        tp_min_pct=opt("tp_min_pct", float, minimum=1, maximum=100),
+        tp_max_pct=opt("tp_max_pct", float, minimum=1, maximum=200),
+        sl_min_pct=opt("sl_min_pct", float, minimum=1, maximum=50),
+        sl_max_pct=opt("sl_max_pct", float, minimum=1, maximum=50),
+        max_step_pct=opt("max_step_pct", float, minimum=0.5, maximum=20),
+        send_trade_reviews=opt("send_trade_reviews", bool),
+        send_updates=opt("send_updates", bool),
+    )
+    if out.tp_min_pct > out.tp_max_pct or out.sl_min_pct > out.sl_max_pct:
+        raise ConfigError("In 'learning:', each *_min_pct must be no bigger than its *_max_pct.")
+    return out

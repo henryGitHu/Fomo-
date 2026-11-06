@@ -132,6 +132,32 @@ CREATE TABLE IF NOT EXISTS outcomes (
     net_return_pct   REAL,
     updated_ts       REAL
 );
+
+-- Self-learning: one review per closed strategy trade.
+CREATE TABLE IF NOT EXISTS trade_reviews (
+    alert_id        INTEGER PRIMARY KEY REFERENCES alerts(id),
+    ts              REAL NOT NULL,      -- when the review was (re)written
+    final           INTEGER DEFAULT 0,  -- 1 = after-exit watching finished
+    mfe_pct         REAL,               -- best gain seen while the trade was open
+    mae_pct         REAL,               -- worst dip seen while the trade was open
+    after_high_pct  REAL,               -- best price after the exit (vs entry)
+    after_low_pct   REAL,               -- worst price after the exit (vs entry)
+    minutes_to_exit REAL,
+    tags            TEXT,               -- JSON list
+    positives       TEXT,               -- JSON list of sentences
+    negatives       TEXT,               -- JSON list of sentences
+    lesson          TEXT,
+    sent            INTEGER DEFAULT 0
+);
+
+-- Every change the learner made (or suggested), with the reason.
+CREATE TABLE IF NOT EXISTS learning_log (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      REAL NOT NULL,
+    kind    TEXT NOT NULL,              -- exits / pattern / note
+    change  TEXT NOT NULL,
+    reason  TEXT
+);
 """
 
 _SNAPSHOT_COLS = [f.name for f in fields(Snapshot)]
@@ -147,6 +173,8 @@ _MIGRATIONS = [
     ("alerts", "runner_state", "INTEGER"),               # NULL undecided, 0 normal exit, 1 runner
     ("alerts", "trail_pct", "REAL"),
     ("alerts", "runner_hold_hours", "REAL"),
+    ("alerts", "features", "TEXT"),                      # JSON: what the token looked like at entry
+    ("alerts", "learn_adjust", "REAL"),                  # score points the learner added/removed
 ]
 
 
@@ -267,7 +295,7 @@ class Storage:
     def alerts_to_track(self, since: float) -> list[sqlite3.Row]:
         """Alerts still inside their tracking window, plus any never evaluated."""
         return self.conn.execute(
-            """SELECT a.*, o.hit AS cur_hit FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
+            """SELECT a.*, o.hit AS cur_hit, o.hit_ts AS cur_hit_ts FROM alerts a LEFT JOIN outcomes o ON o.alert_id = a.id
                WHERE a.ts >= ? OR o.alert_id IS NULL ORDER BY a.ts""",
             (since,),
         ).fetchall()
@@ -364,3 +392,39 @@ class Storage:
                ORDER BY a.ts DESC LIMIT 1""",
             (chain, address),
         ).fetchone()
+
+    # ------------------------------------------------------------------ learning
+    def save_review(self, alert_id: int, **values) -> None:
+        cols = ["alert_id"] + list(values)
+        updates = ", ".join(f"{c} = excluded.{c}" for c in values)
+        self.conn.execute(
+            f"""INSERT INTO trade_reviews ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})
+                ON CONFLICT(alert_id) DO UPDATE SET {updates}""",
+            [alert_id] + [values[c] for c in values],
+        )
+
+    def review(self, alert_id: int) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM trade_reviews WHERE alert_id = ?", (alert_id,)).fetchone()
+
+    def mark_review_sent(self, alert_id: int) -> None:
+        self.conn.execute("UPDATE trade_reviews SET sent = 1 WHERE alert_id = ?", (alert_id,))
+
+    def reviewed_trades(self, since: float = 0) -> list[sqlite3.Row]:
+        """Closed strategy trades with their outcome and review, oldest first."""
+        return self.conn.execute(
+            """SELECT a.*, o.hit, o.hit_ts, o.gross_return_pct, o.net_return_pct,
+                      r.final, r.mfe_pct, r.mae_pct, r.after_high_pct, r.after_low_pct,
+                      r.minutes_to_exit, r.tags, r.positives, r.negatives, r.lesson
+               FROM alerts a JOIN outcomes o ON o.alert_id = a.id
+               JOIN trade_reviews r ON r.alert_id = a.id
+               WHERE a.strategy_trade = 1 AND o.hit_ts >= ? ORDER BY o.hit_ts""",
+            (since,),
+        ).fetchall()
+
+    def add_learning_log(self, ts: float, kind: str, change: str, reason: str = "") -> None:
+        self.conn.execute("INSERT INTO learning_log (ts, kind, change, reason) VALUES (?, ?, ?, ?)",
+                          (ts, kind, change, reason))
+
+    def learning_log(self, limit: int = 20) -> list[sqlite3.Row]:
+        return self.conn.execute("SELECT * FROM learning_log ORDER BY ts DESC, id DESC LIMIT ?",
+                                 (limit,)).fetchall()

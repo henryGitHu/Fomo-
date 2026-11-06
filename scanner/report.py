@@ -281,6 +281,10 @@ def main(argv: list[str] | None = None) -> int:
             rows = [r for r in rows if not r["dry_run"]]
         if cfg.strategy.enabled:
             account_report(cfg, storage)
+            if cfg.learning.enabled:
+                from .learning import Learner, learning_report
+                Learner(cfg, storage).review_closed(time.time())
+                learning_report(cfg, storage, console, last=5)
         build_report(rows)
     finally:
         storage.close()

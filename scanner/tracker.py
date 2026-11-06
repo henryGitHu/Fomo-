@@ -9,6 +9,9 @@ Prices come from two places: the regular scans (tokens are re-checked for a
 while after they trend) and an extra DexScreener lookup each loop for any
 alert still inside its 4-hour window.
 
+Closed strategy trades keep being watched until the 4-hour window ends, so
+the self-learning review (learning.py) can see what happened after the exit.
+
 Honest limitation: we only see the price every ~90 seconds, not every
 trade, so a quick spike through TP or SL between two looks can be missed.
 Stop-losses are filled at the price we actually saw (which may be worse
@@ -163,8 +166,7 @@ class Tracker:
         alerts = self.storage.alerts_to_track(since=now - self._max_window())
         if not alerts:
             return 0
-        live = [a for a in alerts if _col(a, "cur_hit") in STILL_OPEN
-                and now - a["ts"] <= self._max_window()]
+        live = [a for a in alerts if self._needs_prices(a, now)]
         self._fetch_prices(live, now)
         for a in alerts:
             obs = self.storage.price_observations(a["id"], a["chain"], a["token_address"],
@@ -183,6 +185,19 @@ class Tracker:
             self.storage.save_outcome(a["id"], **fields)
         self.storage.commit()
         return len(alerts)
+
+    def _needs_prices(self, a, now: float) -> bool:
+        if now - a["ts"] > self._max_window():
+            return False
+        if _col(a, "cur_hit") in STILL_OPEN:
+            return True
+        # Closed strategy trades: keep watching for the rest of the 4-hour window
+        # (and at least 30 min after the exit) so the self-learning review can
+        # see what the price did after we sold.
+        if self.cfg.learning.enabled and _col(a, "strategy_trade") == 1:
+            hit_ts = _col(a, "cur_hit_ts") or a["ts"]
+            return now <= max(a["ts"] + HORIZON + GRACE, hit_ts + GRACE)
+        return False
 
     def _runner_ok(self, alert, now: float) -> bool:
         """Is momentum still strong right now? (rule: only run past the target

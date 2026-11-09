@@ -16,6 +16,9 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("STUDIO_RUN_WORKER", "0")
     monkeypatch.setenv("STUDIO_TEXT_PROVIDER", "offline")
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    pg = os.environ.get("STUDIO_TEST_DATABASE_URL")  # e.g. postgresql+psycopg://studio:studio@localhost/studio_test
+    if pg:
+        monkeypatch.setenv("DATABASE_URL", pg)
     monkeypatch.delenv("STUDIO_API_TOKEN", raising=False)
     for var in ("OPENAI_API_KEY", "GOOGLE_API_KEY", "BFL_API_KEY", "STABILITY_API_KEY", "REPLICATE_API_TOKEN",
                 "FAL_KEY", "ANTHROPIC_API_KEY"):
@@ -30,6 +33,10 @@ def isolated_env(tmp_path, monkeypatch):
     mock.reset_failures()
     registry._overrides.clear()
     generation.backoff_scale = 0.0
+    if pg:
+        from sqlalchemy import text
+        with db.get_engine().begin() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
     db.migrate()
     yield
     db.reset_engine()

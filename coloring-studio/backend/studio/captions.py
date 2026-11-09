@@ -42,7 +42,7 @@ def compose(page, settings: dict) -> str:
     elif fact:
         parts.append(fact if settings.get("explanation", True) or not settings.get("fun_fact", True)
                      else "Fun fact: " + fact)
-    if settings.get("vocabulary") and vocab and not any(vocab in p for p in parts):
+    if settings.get("vocabulary") and vocab and not any(p.startswith("Word to know") for p in parts):
         parts.append(f"New word: {vocab}.")
     if settings.get("question") and q and q not in parts:
         parts.append(q)

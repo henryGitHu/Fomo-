@@ -423,8 +423,10 @@ def ex_line_weight(db, project, cmd, reply, confirmed):
     locked = [p.position for p in targets if p.locked]
     if locked:
         reply.say(f"🔒 Skipping locked page(s): {locked}.")
-    run = [p for p in targets if not p.locked and p.current_revision_id]
-    no_art = [p.position for p in targets if not p.locked and not p.current_revision_id]
+    pending = ("queued", "generating")
+    # pages still being generated are included: the edit job is queued behind the generation job
+    run = [p for p in targets if not p.locked and (p.current_revision_id or p.status in pending)]
+    no_art = [p.position for p in targets if not p.locked and not p.current_revision_id and p.status not in pending]
     if no_art:
         reply.say(f"Page(s) {no_art} have no artwork yet; they'll use the book style when generated.")
     if not run:

@@ -216,10 +216,11 @@ class ImageProvider(abc.ABC):
 
 
 def choose_size(caps: ModelCapabilities, want_w: int, want_h: int) -> tuple[int, int]:
-    """Pick the native size closest in aspect to the request (largest area on ties)."""
+    """Pick the native size that yields the highest resolution once fitted into the requested box
+    (i.e. maximises print PPI), breaking ties by aspect-ratio closeness."""
     target = want_w / want_h
     if caps.sizes:
-        return min(caps.sizes, key=lambda s: (abs(s[0] / s[1] - target), -(s[0] * s[1])))
+        return max(caps.sizes, key=lambda s: (min(s[0] / want_w, s[1] / want_h), -abs(s[0] / s[1] - target)))
     scale = min(1.0, caps.max_side / max(want_w, want_h))
     w, h = int(want_w * scale) // 16 * 16, int(want_h * scale) // 16 * 16
     return max(w, 256), max(h, 256)

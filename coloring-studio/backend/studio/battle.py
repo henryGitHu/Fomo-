@@ -76,6 +76,7 @@ def candidates(db: Session, battle: Battle) -> list[dict]:
     for r in db.scalars(select(Revision).where(Revision.battle_id == battle.id, Revision.kind == "candidate")):
         q = r.quality or {}
         out.append({"revision_id": r.id, "provider_id": r.provider_id, "model_id": r.model_id,
+                    "image_url": f"/api/assets/{r.asset_id}" if r.asset_id else None,
                     "width": r.width, "height": r.height, "cost": r.cost, "cost_is_estimate": r.cost_is_estimate,
                     "duration_seconds": r.duration_seconds,
                     "objective_scores": q.get("scores", {}), "effective_ppi": q.get("effective_ppi"),

@@ -127,7 +127,11 @@ def build_interior(db: Session, project: Project, *, preview: bool = False) -> t
             continue
         recto_no = intro + 2 * (first.position - 1) + 1
         c.setFont(BODY_FONT, 13)
-        c.drawString(l, y, f"{s.position}. {s.name}"[:80])
+        label = f"{s.position}. {s.name}"
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        while stringWidth(label, BODY_FONT, 13) > cw - 40 and len(label) > 4:
+            label = label[:-2].rstrip() + "…"
+        c.drawString(l, y, label)
         c.drawRightString(l + cw, y, str(recto_no))
         y -= 22
         if y < geo.bottom * PT + 20:

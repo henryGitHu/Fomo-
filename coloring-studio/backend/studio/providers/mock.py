@@ -164,7 +164,7 @@ class MockProvider(ImageProvider):
         return GenerationResult(image=buf.getvalue(), mime="image/png", provider_id=self.provider_id,
                                 model_id=req.model_id, effective_params=params, width=w, height=h,
                                 provider_job_id=f"mock-{hashlib.sha1(req.prompt.encode()).hexdigest()[:10]}",
-                                cost=est.amount, cost_is_estimate=False,
+                                cost=est.amount, cost_is_estimate=est.amount is None,
                                 duration_seconds=time.monotonic() - t0)
 
     def edit_image(self, req: GenerationRequest) -> GenerationResult:
@@ -186,7 +186,10 @@ class MockProvider(ImageProvider):
                                 cost_is_estimate=False, duration_seconds=0.0)
 
     def estimate_cost(self, req: GenerationRequest) -> CostEstimate:
-        return CostEstimate(float(self.settings.get("simulated_price_per_image", 0.0)), False, "simulated")
+        price = self.settings.get("simulated_price_per_image", 0.0)
+        if price is None:  # lets tests exercise "unknown price" handling
+            return CostEstimate(None, True, "simulated unknown price")
+        return CostEstimate(float(price), False, "simulated")
 
     def validate_configuration(self) -> ValidationResult:
         return ValidationResult(True, "Offline mock provider is always available (simulated output).",

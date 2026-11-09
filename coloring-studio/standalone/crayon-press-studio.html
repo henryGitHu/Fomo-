@@ -1,0 +1,1026 @@
+<title>Crayon Press Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Layout: sticky top bar (book + workflow tabs) over a two-column shell — the working view on the left,
+   the docked Live Book Editor on the right (slide-over on narrow screens). Pages are drawn as paper sheets. */
+:root{
+  --paper:#F3F5F6; --sheet:#FFFFFF; --ink:#16212C; --ink-2:#4B5967; --line:#D3DAE0; --wash:#E9EDF0;
+  --accent:#E9A21A; --accent-ink:#16212C; --cobalt:#2B57D0; --cobalt-wash:#E4EBFB;
+  --good:#1D8657; --warn:#A86D12; --bad:#BF3B34; --good-wash:#E2F3EA; --warn-wash:#FBF0DC; --bad-wash:#FBE5E3;
+  --f-display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --f-body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r:10px; --shadow:0 1px 2px rgba(22,33,44,.06), 0 4px 14px rgba(22,33,44,.06);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#0E1318; --sheet:#161D25; --ink:#E7ECF1; --ink-2:#9AA7B4; --line:#2A3540; --wash:#1D2630;
+  --accent:#F2B634; --accent-ink:#141A20; --cobalt:#86A2FF; --cobalt-wash:#1E2A48;
+  --good:#53C391; --warn:#E3B04B; --bad:#F07A70; --good-wash:#16302A; --warn-wash:#33291A; --bad-wash:#3A1F1F;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25); color-scheme:dark }}
+:root[data-theme="dark"]{
+  --paper:#0E1318; --sheet:#161D25; --ink:#E7ECF1; --ink-2:#9AA7B4; --line:#2A3540; --wash:#1D2630;
+  --accent:#F2B634; --accent-ink:#141A20; --cobalt:#86A2FF; --cobalt-wash:#1E2A48;
+  --good:#53C391; --warn:#E3B04B; --bad:#F07A70; --good-wash:#16302A; --warn-wash:#33291A; --bad-wash:#3A1F1F;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25); color-scheme:dark }
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:40;background:var(--sheet)}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);font-weight:800;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:1.6rem} h2{font-size:1.15rem} h3{font-size:1rem}
+a{color:var(--cobalt)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--ink-2)}
+.small{font-size:.82rem}
+:focus-visible{outline:2px solid var(--cobalt);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:var(--sheet);border-bottom:1px solid var(--line)}
+.top-in{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:800;font-size:1.1rem;background:none;border:0;cursor:pointer;padding:0}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:var(--accent-ink)}
+.book-name{font-family:var(--f-display);font-weight:600;color:var(--ink-2);max-width:32ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tabs{display:flex;gap:2px;overflow-x:auto;min-width:0;flex:1 1 100%;scrollbar-width:thin}
+.tab{border:0;background:none;padding:7px 11px;border-radius:8px;cursor:pointer;white-space:nowrap;color:var(--ink-2);font-weight:700;font-size:.9rem}
+.tab:hover{background:var(--wash);color:var(--ink)}
+.tab[aria-current="page"]{background:var(--ink);color:var(--sheet)}
+.tab .step{font-family:var(--f-mono);font-size:.72rem;opacity:.7;margin-right:5px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:.78rem;font-weight:700;background:var(--wash);color:var(--ink-2);white-space:nowrap}
+.pill.good{background:var(--good-wash);color:var(--good)} .pill.warn{background:var(--warn-wash);color:var(--warn)} .pill.bad{background:var(--bad-wash);color:var(--bad)} .pill.info{background:var(--cobalt-wash);color:var(--cobalt)}
+
+/* shell */
+.shell{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1600px;margin:0 auto}
+.shell.no-chat{grid-template-columns:minmax(0,1fr)}
+main{min-width:0;display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.panel-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:12px}
+.panel-head .spacer{min-width:8px}
+.lead{max-width:68ch;margin:4px 0 0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:.85rem;font-weight:700}
+label.f span.h{font-weight:400;color:var(--ink-2);font-size:.78rem}
+.in{width:100%;border:1px solid var(--line);background:var(--sheet);border-radius:8px;padding:7px 10px;font-weight:400}
+textarea.in{resize:vertical;min-height:64px}
+.check{display:flex;align-items:center;gap:8px;font-size:.9rem}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--sheet);border-radius:8px;padding:7px 12px;font-weight:700;font-size:.88rem;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--wash)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(.95)}
+.btn.dark{background:var(--ink);border-color:var(--ink);color:var(--sheet)}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.btn.ghost{border-color:transparent;background:none}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.note{border-left:3px solid var(--cobalt);background:var(--cobalt-wash);padding:8px 12px;border-radius:0 8px 8px 0;font-size:.88rem;max-width:80ch}
+.note.warn{border-color:var(--warn);background:var(--warn-wash)}
+.note.bad{border-color:var(--bad);background:var(--bad-wash)}
+.bar{height:6px;background:var(--wash);border-radius:99px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th{text-align:left;font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-2);font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+
+/* library */
+.lib{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
+.book{display:flex;flex-direction:column;gap:8px}
+.cover-thumb{aspect-ratio:8.5/11;max-width:100%;background:var(--sheet);border:1px solid var(--line);border-radius:4px;box-shadow:var(--shadow);display:grid;place-items:center;overflow:hidden;cursor:pointer;position:relative}
+.cover-thumb img{width:100%;height:100%;object-fit:contain;background:#fff}
+.cover-thumb .ph{font-family:var(--f-display);font-weight:800;color:var(--line);font-size:3rem}
+.book h3{font-size:1rem}
+
+/* studio */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--sheet);border-radius:99px;padding:3px 10px;font-size:.8rem;cursor:pointer;font-weight:700;color:var(--ink-2)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.sec-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:6px 0 10px}
+.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.pg{position:relative;display:flex;flex-direction:column;gap:6px;min-width:0}
+.sheet{aspect-ratio:7.5/8.9;max-width:100%;background:#fff;border:1px solid var(--line);border-radius:3px;box-shadow:var(--shadow);display:grid;place-items:center;overflow:hidden;cursor:pointer;position:relative;padding:0}
+.sheet img{width:100%;height:100%;object-fit:contain}
+.sheet .empty{font-size:.78rem;color:#7a8794;padding:10px;text-align:center}
+.sheet.gen::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(233,162,26,.25) 50%,transparent 70%);background-size:200% 100%;animation:sweep 1.2s linear infinite}
+@keyframes sweep{from{background-position:120% 0}to{background-position:-80% 0}}
+.pg .num{position:absolute;top:6px;left:6px;font-family:var(--f-mono);font-size:.7rem;background:rgba(255,255,255,.92);color:#16212C;border-radius:4px;padding:1px 5px;border:1px solid #D3DAE0}
+.pg .lock{position:absolute;top:6px;right:32px;font-size:.75rem;background:#16212C;color:#fff;border-radius:4px;padding:1px 5px}
+.pg .sel{position:absolute;top:6px;right:6px;width:18px;height:18px;margin:0}
+.pg .t{font-size:.8rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pg .meta{display:flex;justify-content:space-between;align-items:center;gap:4px}
+.st{font-size:.7rem;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap}
+.st-planned{background:var(--wash);color:var(--ink-2)} .st-queued,.st-generating{background:var(--cobalt-wash);color:var(--cobalt)}
+.st-review{background:var(--warn-wash);color:var(--warn)} .st-revision,.st-failed{background:var(--bad-wash);color:var(--bad)}
+.st-approved,.st-locked{background:var(--good-wash);color:var(--good)}
+.queuebar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--cobalt-wash);border-radius:8px;padding:8px 12px;font-size:.88rem}
+
+/* drawer */
+.drawer-bg{position:fixed;inset:0;background:rgba(10,15,20,.45);z-index:50;display:flex;justify-content:flex-end}
+.drawer{width:min(980px,100%);height:100%;background:var(--sheet);overflow-y:auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px}
+.detail{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.detail{grid-template-columns:1fr}}
+.big{aspect-ratio:7.5/8.9;max-width:100%;background:#fff;border:1px solid var(--line);display:grid;place-items:center}
+.big img{width:100%;height:100%;object-fit:contain}
+.checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;font-size:.86rem}
+.checks li{display:flex;gap:8px}
+.checks .i{width:18px;flex:none;font-weight:800;text-align:center}
+.ok{color:var(--good)} .wn{color:var(--warn)} .fl{color:var(--bad)}
+.revs{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.rev{flex:none;width:96px;font-size:.7rem;display:flex;flex-direction:column;gap:4px}
+.rev .sheet{border-width:2px}
+.rev.cur .sheet{border-color:var(--accent)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:.84rem}
+.kv dt{color:var(--ink-2)} .kv dd{margin:0}
+
+/* battle */
+.contenders{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.cand{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:var(--r);padding:10px}
+.cand.win{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.scores{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:.82rem}
+.meter{height:5px;background:var(--wash);border-radius:9px;grid-column:1/-1;overflow:hidden;margin-bottom:4px}
+.meter>i{display:block;height:100%;background:var(--cobalt)}
+
+/* preview */
+.spread{display:grid;grid-template-columns:1fr 1fr;background:var(--wash);padding:16px;border-radius:var(--r);gap:0;max-width:900px;margin:0 auto;width:100%}
+.ppage{background:#fff;color:#16212C;aspect-ratio:8.5/11;max-width:100%;position:relative;box-shadow:var(--shadow);overflow:hidden}
+.ppage .safe{position:absolute;border:1px dashed #9ec1e8}
+.ppage .art{position:absolute;display:grid;place-items:center}
+.ppage .art img{max-width:100%;max-height:100%;object-fit:contain}
+.ppage .cap{position:absolute;text-align:center;font-size:clamp(6px,1.05vw,11px);line-height:1.3}
+.ppage .pn{position:absolute;bottom:3%;width:100%;text-align:center;font-family:var(--f-mono);font-size:9px;color:#7a8794}
+.ppage .fm{position:absolute;inset:12%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:6px}
+.wrap-cover{display:flex;max-width:900px;width:100%;margin:0 auto;border-radius:4px;overflow:hidden;box-shadow:var(--shadow)}
+.wrap-cover>div{display:grid;place-items:center;color:#fff;font-size:.78rem;text-align:center;padding:6px;min-width:0}
+
+/* chat */
+.chat{position:sticky;top:calc(env(safe-area-inset-top,0px) + 120px);height:calc(100vh - 150px);display:flex;flex-direction:column;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.chat-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:.88rem}
+.m{padding:8px 11px;border-radius:10px;max-width:92%;white-space:pre-wrap;overflow-wrap:anywhere}
+.m.u{align-self:flex-end;background:var(--cobalt-wash)}
+.m.a{align-self:flex-start;background:var(--wash)}
+.ex{display:block;width:100%;text-align:left;border:1px dashed var(--line);background:none;border-radius:8px;padding:6px 9px;cursor:pointer;font-size:.82rem;color:var(--ink-2)}
+.ex:hover{border-style:solid;color:var(--ink)}
+.chat form{display:flex;gap:6px;padding:10px;border-top:1px solid var(--line)}
+.chat-fab{position:fixed;right:max(16px,calc(env(safe-area-inset-right,0px) + 16px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:45}
+@media (max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .chat{position:fixed;z-index:46;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(12px + env(safe-area-inset-bottom,0px));top:auto;height:min(70vh,560px);box-shadow:0 10px 40px rgba(0,0,0,.25)}
+}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;flex-direction:column;gap:6px;align-items:center;width:min(560px,calc(100% - 32px))}
+.t-msg{background:var(--ink);color:var(--sheet);padding:9px 14px;border-radius:9px;font-size:.88rem;box-shadow:var(--shadow)}
+.confirm{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bad-wash);border-radius:8px;padding:8px 10px;font-size:.86rem}
+.hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px;align-items:center}
+@media (max-width:760px){.hero{grid-template-columns:1fr}}
+.hero-art{display:flex;gap:10px;justify-content:center}
+.hero-art .sheet{width:30%;cursor:default}
+.stat{display:flex;flex-direction:column}
+.stat b{font-family:var(--f-display);font-size:1.5rem}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <button class="brand" data-act="go" data-view="library" aria-label="Library">
+      <span class="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg></span>
+      Crayon Press Studio
+    </button>
+    <span class="book-name" id="bookName"></span>
+    <span class="spacer"></span>
+    <span id="storePill" class="pill">Connecting…</span>
+    <span id="claudePill" class="pill">Claude artist: checking</span>
+    <nav class="tabs" id="tabs" aria-label="Book workflow"></nav>
+  </div>
+</header>
+<div class="shell" id="shell">
+  <main id="view" aria-live="polite"></main>
+  <aside class="chat" id="chat" aria-label="Live Book Editor" hidden></aside>
+</div>
+<button class="btn dark chat-fab" id="chatFab" data-act="chat-open" hidden>Live Book Editor</button>
+<div id="drawer"></div>
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+/* ============================================================ knowledge & constants */
+const PACK = {"stages": [{"name": "Meet the Chemical Engineers", "stage": "introduction", "goals": "Who chemical engineers are, how they stay safe, and the basic ideas of matter."}, {"name": "Equipment and Machinery", "stage": "tools", "goals": "The tanks, pumps, valves and pipes engineers use, and what each one does."}, {"name": "Chemical Processes", "stage": "processes", "goals": "How engineers separate, heat, cool and combine materials."}, {"name": "Industrial Applications", "stage": "applications", "goals": "Real plants and factories that make clean water, fuels, materials and medicines."}, {"name": "Engineering in Everyday Life", "stage": "careers", "goals": "Chemical engineering in the things children use every day \u2014 and how they could become engineers."}], "concepts": [{"stage": 0, "subject": "A chemical engineer at work", "scene": "a friendly chemical engineer in a lab coat holding a clipboard beside a small pilot plant with tanks and pipes", "fact": "Chemical engineers turn raw materials into useful products like medicines, fuels and clean water.", "vocabulary": "engineer", "question": "What useful product would you like to invent?"}, {"stage": 0, "subject": "Safety goggles and lab coat", "scene": "a smiling engineer putting on safety goggles, gloves and a lab coat next to a safety sign", "fact": "Engineers wear safety goggles, gloves and lab coats to protect their eyes and skin.", "vocabulary": "safety goggles", "question": "Why is it important to protect your eyes?"}, {"stage": 0, "subject": "Beakers and flasks", "scene": "a lab bench with beakers, a round flask and a measuring cylinder showing level lines", "fact": "Beakers and flasks are containers for holding liquids. Many have lines that show how much liquid is inside.", "vocabulary": "beaker", "question": "Can you count the containers on the bench?"}, {"stage": 0, "subject": "Atoms and molecules", "scene": "big friendly ball-and-stick models of a water molecule with one oxygen atom and two hydrogen atoms", "fact": "Everything is made of tiny atoms. When atoms join together they make molecules, like water (H2O).", "vocabulary": "molecule", "question": "How many atoms are in one water molecule?"}, {"stage": 0, "subject": "Ice, water and steam", "scene": "three panels showing an ice cube, a glass of water and a kettle making steam", "fact": "Water can be a solid (ice), a liquid (water) or a gas (steam). Heating and cooling change its state.", "vocabulary": "states of matter", "question": "Which state of water is the coldest?"}, {"stage": 0, "subject": "Measuring carefully", "scene": "an engineer reading a digital balance with a small dish of powder on it", "fact": "Engineers measure carefully. A balance tells how much mass a material has.", "vocabulary": "mass", "question": "What else do people measure every day?"}, {"stage": 0, "subject": "Safety at the plant", "scene": "workers in hard hats and safety vests walking along a walkway at a chemical plant", "fact": "At a chemical plant, workers wear hard hats and follow safety rules to keep everyone safe.", "vocabulary": "hard hat", "question": "What safety gear can you spot?"}, {"stage": 0, "subject": "Planning with diagrams", "scene": "two engineers looking at a large process diagram of tanks, arrows and pipes on a table", "fact": "Engineers draw diagrams that show how pipes, tanks and machines connect before anything is built.", "vocabulary": "diagram", "question": "What would you draw on a plan for your own factory?"}, {"stage": 1, "subject": "Storage tanks", "scene": "a row of large round storage tanks with ladders and railings on top", "fact": "Large storage tanks hold liquids and gases safely until they are needed.", "vocabulary": "storage tank", "question": "What do you think is stored inside?"}, {"stage": 1, "subject": "Pumps", "scene": "a big industrial pump with a motor, pipes going in and out and arrows showing flow", "fact": "Pumps push liquids through pipes, a bit like your heart pumps blood around your body.", "vocabulary": "pump", "question": "Where else have you seen a pump?"}, {"stage": 1, "subject": "Valves", "scene": "an engineer turning a large round valve wheel on a pipe", "fact": "Valves open and close to control how much liquid flows through a pipe, just like a faucet.", "vocabulary": "valve", "question": "What happens when you close a faucet?"}, {"stage": 1, "subject": "Pipes everywhere", "scene": "a maze of pipes with elbows, joints and flow arrows connecting two tanks", "fact": "Pipes carry liquids and gases from one machine to another inside a plant.", "vocabulary": "pipeline", "question": "Can you trace the path from one tank to the other?"}, {"stage": 1, "subject": "Industrial mixer", "scene": "a giant mixing tank with a motor on top and big stirring blades inside, shown with a cut-away window", "fact": "Industrial mixers have big spinning blades that stir ingredients together evenly.", "vocabulary": "mixer", "question": "What do you mix in your kitchen at home?"}, {"stage": 1, "subject": "Heat exchanger", "scene": "a heat exchanger with a hot pipe and a cold pipe running side by side, wavy heat lines between them", "fact": "A heat exchanger moves heat from a hot liquid to a cold one without letting them mix.", "vocabulary": "heat exchanger", "question": "Which side do you think is hot?"}, {"stage": 1, "subject": "Pressure gauges", "scene": "close-up of several round pressure gauges with needles mounted on a pipe", "fact": "Gauges show the pressure inside tanks and pipes so engineers know everything is working safely.", "vocabulary": "pressure", "question": "Where is the needle pointing on each gauge?"}, {"stage": 1, "subject": "The control room", "scene": "engineers sitting at desks with computer screens showing simple tank and pipe pictures", "fact": "In the control room, engineers watch screens that show what every machine is doing.", "vocabulary": "control room", "question": "What would you watch on the screens?"}, {"stage": 2, "subject": "Filtration", "scene": "a tall filter tank with layers of gravel and sand and clean water dripping out of the bottom", "fact": "Filters let liquid pass through while catching solid particles, like a coffee filter does.", "vocabulary": "filtration", "question": "What does a filter catch?"}, {"stage": 2, "subject": "Distillation column", "scene": "a tall distillation tower with trays inside, a heater at the bottom and pipes at different heights", "fact": "A distillation column separates liquids by boiling. Liquids that boil at lower temperatures rise higher in the tower.", "vocabulary": "distillation", "question": "Why is the tower so tall?"}, {"stage": 2, "subject": "Heating and evaporation", "scene": "a large shallow pan of salty water being warmed, with wavy vapor rising", "fact": "When water is heated it evaporates into vapor, and any salt dissolved in it is left behind.", "vocabulary": "evaporation", "question": "Where does the water go when it evaporates?"}, {"stage": 2, "subject": "Cooling and condensing", "scene": "a cold pipe coil with droplets forming and dripping into a collection tank", "fact": "When steam cools down, it condenses back into liquid water droplets.", "vocabulary": "condensation", "question": "Have you seen water droplets on a cold glass?"}, {"stage": 2, "subject": "Settling tank", "scene": "a wide round settling tank with a slowly turning arm and particles sinking to the bottom", "fact": "In a settling tank, heavy particles slowly sink to the bottom, separating them from the liquid.", "vocabulary": "sedimentation", "question": "Why do heavy things sink?"}, {"stage": 2, "subject": "Chemical reactor", "scene": "a big round steel reactor vessel with a stirrer, inlet pipes and a viewing window", "fact": "A reactor is a special container where chemicals combine to make something new.", "vocabulary": "reaction", "question": "What new thing would you make?"}, {"stage": 2, "subject": "Crystals", "scene": "close-up of large cube-shaped salt crystals forming in a dish, drawn with clear outlines", "fact": "As salty water evaporates, salt crystals form. Engineers use crystallization to make salt and sugar.", "vocabulary": "crystal", "question": "What shape are salt crystals?"}, {"stage": 2, "subject": "Catalysts", "scene": "a cartoon helper character speeding molecules together on a conveyor belt", "fact": "A catalyst helps a chemical reaction go faster without being used up.", "vocabulary": "catalyst", "question": "What helps you finish a job faster?"}, {"stage": 3, "subject": "Water treatment plant", "scene": "a water treatment plant with mixing basins, filters and a clean water tower", "fact": "Water treatment plants clean river or lake water by filtering it and killing germs so it is safe to drink.", "vocabulary": "treatment", "question": "Where does your drinking water come from?"}, {"stage": 3, "subject": "Oil refinery", "scene": "a refinery with tall distillation towers, tanks and a network of pipes under a sunny sky", "fact": "A refinery separates crude oil into useful products like gasoline, jet fuel and asphalt for roads.", "vocabulary": "refinery", "question": "How many towers can you count?"}, {"stage": 3, "subject": "Making plastics", "scene": "a factory machine shaping plastic pellets into bottles moving along a conveyor belt", "fact": "Plastics are made of long-chain molecules called polymers that can be shaped into bottles, toys and more.", "vocabulary": "polymer", "question": "What plastic things are in your room?"}, {"stage": 3, "subject": "Fertilizer for farms", "scene": "a fertilizer plant next to green farm fields with a tractor", "fact": "Fertilizer factories make nutrients like nitrogen that help farm crops grow.", "vocabulary": "nutrient", "question": "What do plants need to grow?"}, {"stage": 3, "subject": "Paper mill", "scene": "a paper mill with a log pile, a big pulp tank and rollers pressing a long sheet of paper", "fact": "Paper mills turn wood chips into pulp, then press and dry it into sheets of paper.", "vocabulary": "pulp", "question": "What will you draw on your next sheet of paper?"}, {"stage": 3, "subject": "Medicine factory", "scene": "a clean factory room where a machine fills small bottles and makes tablets", "fact": "Medicine factories make sure every tablet has exactly the right amount of medicine.", "vocabulary": "dose", "question": "Why should medicine always be measured exactly?"}, {"stage": 3, "subject": "Pasteurizing milk", "scene": "milk flowing through a heating pipe and then a cooling pipe into clean milk bottles", "fact": "Pasteurization heats milk to kill harmful germs, then cools it quickly to keep it fresh.", "vocabulary": "pasteurization", "question": "What other foods are kept fresh by cooling?"}, {"stage": 3, "subject": "Recycling plant", "scene": "a recycling plant with conveyor belts sorting bottles, cans and paper into bins", "fact": "Recycling plants sort old materials like plastic and glass so they can be made into new things.", "vocabulary": "recycling", "question": "What can you recycle at home?"}, {"stage": 4, "subject": "Soap and bubbles", "scene": "a child washing hands with big soap bubbles floating around the sink", "fact": "Soap molecules grab onto grease and dirt so water can wash them away.", "vocabulary": "soap", "question": "How long should you wash your hands?"}, {"stage": 4, "subject": "Toothpaste", "scene": "a smiling toothbrush and toothpaste tube next to a happy tooth", "fact": "Many toothpastes contain fluoride, which helps keep your teeth strong.", "vocabulary": "fluoride", "question": "How many times a day do you brush?"}, {"stage": 4, "subject": "Sunscreen at the beach", "scene": "a family at the beach putting on sunscreen under a big sun and umbrella", "fact": "Sunscreen contains ingredients that block or absorb the sun's ultraviolet rays to protect your skin.", "vocabulary": "ultraviolet", "question": "What else protects you from the sun?"}, {"stage": 4, "subject": "Batteries", "scene": "a cut-away drawing of a battery powering a toy robot", "fact": "Batteries store energy using chemical reactions and release it as electricity.", "vocabulary": "battery", "question": "Which of your toys use batteries?"}, {"stage": 4, "subject": "Cleaner air from cars", "scene": "a car with a cut-away view of its catalytic converter under the car, clouds of clean air", "fact": "A car's catalytic converter changes harmful exhaust gases into less harmful ones.", "vocabulary": "exhaust", "question": "How else can we keep the air clean?"}, {"stage": 4, "subject": "Solar panels", "scene": "a house roof with solar panels and a big sun with rays", "fact": "Engineers help make the special materials in solar panels that turn sunlight into electricity.", "vocabulary": "solar energy", "question": "What could you power with sunlight?"}, {"stage": 4, "subject": "Chocolate making", "scene": "a chocolate factory with a melting kettle, a cooling table and chocolate bars in molds", "fact": "Chocolate makers carefully heat and cool chocolate, called tempering, to make it smooth and shiny.", "vocabulary": "tempering", "question": "What is your favorite treat?"}, {"stage": 4, "subject": "Future engineer", "scene": "a child in a hard hat and goggles proudly holding plans in front of a tiny model factory", "fact": "You could be a chemical engineer someday! Curiosity, math and science are great places to start.", "vocabulary": "career", "question": "What would you like to build?"}], "references": [{"title": "What Is Chemical Engineering? \u2014 AIChE", "url": "https://www.aiche.org/students/what-chemical-engineering", "publisher": "American Institute of Chemical Engineers", "license": "facts only (paraphrased)"}, {"title": "Chemical Engineers \u2014 Occupational Outlook Handbook", "url": "https://www.bls.gov/ooh/architecture-and-engineering/chemical-engineers.htm", "publisher": "U.S. Bureau of Labor Statistics", "license": "U.S. government work (public domain)"}, {"title": "Drinking Water Treatment", "url": "https://www.cdc.gov/drinking-water/about/how-water-treatment-works.html", "publisher": "U.S. Centers for Disease Control and Prevention", "license": "U.S. government work (public domain)"}, {"title": "Oil refining (Energy Explained)", "url": "https://www.eia.gov/energyexplained/oil-and-petroleum-products/refining-crude-oil.php", "publisher": "U.S. Energy Information Administration", "license": "U.S. government work (public domain)"}, {"title": "Chemical engineering", "url": "https://en.wikipedia.org/wiki/Chemical_engineering", "publisher": "Wikipedia", "license": "CC BY-SA 4.0 (facts paraphrased, no text copied)"}], "pitfalls": ["Do not show children mixing household chemicals or doing unsupervised experiments.", "Avoid depicting flames, explosions or toxic fumes as fun.", "Distillation separates by boiling point, not by weight \u2014 keep wording accurate.", "Do not imply all chemicals are dangerous or that 'chemical-free' products exist."]}
+;
+const TRIMS = {"8.5x11":[8.5,11],"8.25x11":[8.25,11],"8x10":[8,10],"8.5x8.5":[8.5,8.5],"7x10":[7,10],"6x9":[6,9]};
+const SPINE = {white:0.002252, cream:0.0025};
+const CAP_BAND = 1.1, DPI = 300;
+const STAGE_ORDER = ["introduction","tools","processes","applications","careers"];
+const REC = {10:[1,1],20:[2,2],30:[3,4],40:[4,5],60:[6,8],80:[8,10],100:[10,12]};
+const VARIANTS = [["{s}","{c}"],["{s}: a closer look","a close-up view of the important parts of: {c}"],["{s}: learning together","two children and a friendly guide learning about it: {c}"],["{s}: the big picture","a wide scene showing the setting around it: {c}"],["{s}: step by step","a simple three-step picture sequence in one image explaining it: {c}"]];
+const ENGINES = {
+  sketch:{label:"Sketch engine", note:"instant, offline, abstract placeholder shapes"},
+  "claude-quick":{label:"Claude artist · quick", tier:"quick"},
+  "claude-default":{label:"Claude artist · standard", tier:"default"},
+  "claude-complex":{label:"Claude artist · detailed", tier:"complex"},
+};
+const VIEWS = [["library","Library"],["research","Research"],["plan","Section planner"],["studio","Illustration studio"],["battle","Model battle"],["captions","Captions"],["preview","Book preview"],["publish","Publish"]];
+const STATUS_LABEL = {planned:"Planned",queued:"Queued",generating:"Drawing",review:"Awaiting review",revision:"Revision requested",approved:"Approved",locked:"Locked",failed:"Failed"};
+
+/* ============================================================ helpers */
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const newId = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-5);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function toast(msg){ const el=document.createElement("div"); el.className="t-msg"; el.textContent=msg; $("#toast").appendChild(el); setTimeout(()=>el.remove(), 4200); }
+function rng(str){ let h=1779033703^str.length; for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;} let a=h>>>0; return ()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}; }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch{ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); return true; }catch{ return false; } }
+function lsDel(k){ try{ localStorage.removeItem(k); }catch{} }
+
+/* ============================================================ state */
+const S = { store:"memory", db:null, uid:null, sample:null, downloads:null, library:[], book:null, art:{},
+  view:"library", filter:"all", selected:new Set(), openPage:null, chatOpen:true, loading:true, confirm:null,
+  battlePage:null, battleSel:new Set(["sketch","claude-default"]), previewSpread:0, exporting:null, mem:{} };
+const Q = { items:[], running:false, paused:false, current:null, done:0, total:0 };
+const thumbCache = new Map();
+
+/* ============================================================ storage (db → browser → memory) */
+const chains = {};
+function serial(key, fn){ const p=(chains[key]||Promise.resolve()).then(fn, fn); chains[key]=p.catch(()=>{}); return p; }
+function dbErr(e){ if(e && e.code==="quota_exceeded") toast("Storage is full: delete an old book to make room."); else if(e && e.code==="invalid_argument") toast("This view can't save (read-only access)."); else toast("Couldn't save: " + (e && e.message || e)); }
+const Store = {
+  bookCol(){ return S.db.collection("data/users/" + S.uid); },
+  artCol(bid){ return S.db.doc("data/users/" + S.uid + "/book-" + bid).collection("art"); },
+  async listBooks(){
+    if(S.store==="db"){ const snap = await this.bookCol().where("kind","==","book").get(); return snap.docs.map(d=>structuredClone(d.data())); }
+    if(S.store==="local"){ const ids=JSON.parse(lsGet("cps:index")||"[]"); return ids.map(id=>JSON.parse(lsGet("cps:book:"+id)||"null")).filter(Boolean); }
+    return Object.values(S.mem).map(x=>x.book);
+  },
+  async loadArt(bid){
+    if(S.store==="db"){ const snap=await this.artCol(bid).get(); const out={}; snap.docs.forEach(d=>out[d.id]=structuredClone(d.data())); return out; }
+    if(S.store==="local"){ const out={}; const book=JSON.parse(lsGet("cps:book:"+bid)||"null"); (book?.pages||[]).forEach(p=>{const a=lsGet("cps:art:"+bid+":"+p.id); if(a) out[p.id]=JSON.parse(a);}); return out; }
+    return structuredClone(S.mem[bid]?.art || {});
+  },
+  putBook(book){
+    const body = JSON.parse(JSON.stringify(book));
+    return serial("book:"+book.id, async()=>{
+      if(S.store==="db") return this.bookCol().doc("book-"+book.id).set(body).catch(dbErr);
+      if(S.store==="local"){ const ok=lsSet("cps:book:"+book.id, JSON.stringify(body)); const ids=new Set(JSON.parse(lsGet("cps:index")||"[]")); ids.add(book.id); lsSet("cps:index", JSON.stringify([...ids])); if(!ok) toast("Browser storage is full."); return; }
+      S.mem[book.id]=S.mem[book.id]||{art:{}}; S.mem[book.id].book=body;
+    });
+  },
+  putArt(bid, pid, doc){
+    const body = JSON.parse(JSON.stringify(doc));
+    return serial("art:"+bid+":"+pid, async()=>{
+      if(S.store==="db") return this.artCol(bid).doc(pid).set(body).catch(dbErr);
+      if(S.store==="local"){ if(!lsSet("cps:art:"+bid+":"+pid, JSON.stringify(body))) toast("Browser storage is full."); return; }
+      S.mem[bid]=S.mem[bid]||{art:{}}; S.mem[bid].art[pid]=body;
+    });
+  },
+  async deleteBook(book){
+    if(S.store==="db"){ await serial("book:"+book.id, ()=>this.bookCol().doc("book-"+book.id).delete()); for(const p of book.pages) await this.artCol(book.id).doc(p.id).delete().catch(()=>{}); return; }
+    if(S.store==="local"){ lsDel("cps:book:"+book.id); book.pages.forEach(p=>lsDel("cps:art:"+book.id+":"+p.id)); const ids=JSON.parse(lsGet("cps:index")||"[]").filter(x=>x!==book.id); lsSet("cps:index", JSON.stringify(ids)); return; }
+    delete S.mem[book.id];
+  }
+};
+let saveTimer=null;
+function save(book=S.book){ if(!book) return; book.updated=Date.now(); summarize(book); clearTimeout(saveTimer); saveTimer=setTimeout(()=>Store.putBook(book), 500); const i=S.library.findIndex(b=>b.id===book.id); if(i>=0) S.library[i]=book; }
+function summarize(book){ const st={}; book.pages.forEach(p=>{const k=p.locked?"locked":p.status; st[k]=(st[k]||0)+1;}); book.summary={pages:book.pages.length, drawn:book.pages.filter(p=>p.cur).length, approved:book.pages.filter(p=>p.locked||p.status==="approved").length, status:st}; }
+function artOf(pid, book=S.book){ const a=S.art[book.id]=S.art[book.id]||{}; return a[pid]=a[pid]||{revs:[]}; }
+function curRev(p, book=S.book){ return p.cur ? (artOf(p.id,book).revs.find(r=>r.id===p.cur)||null) : null; }
+
+/* ============================================================ KDP geometry */
+function geometry(book){ const [w,h]=TRIMS[book.trim]; const n=book.pages.length||book.count; const pages=4+2*n; const kdpGutter=pages<=150?0.375:pages<=300?0.5:pages<=500?0.625:pages<=700?0.75:0.875; const gutter=Math.max(kdpGutter,0.5), out=0.5, top=0.5, bottom=0.5; return {w,h,pages,gutter,out,top,bottom,kdpGutter,artW:+(w-gutter-out).toFixed(3),artH:+(h-top-bottom-CAP_BAND).toFixed(3)}; }
+function coverGeo(book){ const g=geometry(book); const spine=+(g.pages*SPINE[book.paper]).toFixed(4); return {w:g.w,h:g.h,spine,fullW:+(0.25+g.w*2+spine).toFixed(4),fullH:+(g.h+0.25).toFixed(4),spineText:g.pages>79,pages:g.pages}; }
+
+/* ============================================================ research & planning */
+function packFor(theme){ const t=(theme||"").toLowerCase(); return /chemical engineer/.test(t) ? PACK : null; }
+function offlineResearch(book){
+  const pack=packFor(book.theme);
+  if(pack) return {mode:"Built-in knowledge pack (reviewed facts)", overview:"Chemical engineers design the processes that turn raw materials into useful products: clean water, medicines, fuels, foods and materials, made safely and efficiently. This book moves from first ideas to real-world applications and careers.",
+    sections:pack.stages, subjects:pack.concepts.map(c=>({...c, verified:true, sources:pack.references.map((_,i)=>i)})), references:pack.references, pitfalls:pack.pitfalls, verified:true};
+  const T=book.theme||book.title, Tt=T.replace(/\b\w/g,c=>c.toUpperCase());
+  const stages=[["Meet "+Tt,"introduction","What "+T+" is and the very first ideas to know."],["Tools and Things of "+Tt,"tools","The main objects, tools and words of "+T+"."],["How "+Tt+" Works","processes","The steps and processes behind "+T+"."],[Tt+" in the Real World","applications","Where "+T+" shows up in the world."],[Tt+" and You","careers","How "+T+" connects to everyday life and future jobs."]].map(([name,stage,goals])=>({name,stage,goals}));
+  const scenes=[["A friendly introduction to "+T,"a cheerful guide character presenting "+T+" with a few simple related objects"],["The basic parts of "+T,"a large clear drawing of the main parts of "+T],["Tools used in "+T,"a neat arrangement of the tools people use for "+T],["A day of "+T,"people taking part in "+T],[T+" up close","a magnified close-up of an interesting detail of "+T],[T+" outdoors","an outdoor landscape that shows "+T],["Learning about "+T,"children at a museum looking at a display about "+T],[T+" long ago","a historical scene showing "+T+" in the past"],[T+" in the future","a hopeful futuristic scene imagining "+T],["Working together in "+T,"a team cooperating on a "+T+" task"]];
+  return {mode:"Offline templates (unverified, review every caption)", overview:"No curated facts are bundled for “"+T+"”. These are generic starting concepts. Use Research with Claude for topic-specific ideas and facts.", sections:stages,
+    subjects:scenes.map(([subject,scene],i)=>({stage:Math.min(4,Math.floor(i/2)),subject,scene,fact:"",vocabulary:"",question:"What do you like most about "+T+"?",verified:false,sources:[]})), references:[], pitfalls:["Facts for this topic are not verified. Review every caption before publishing."], verified:false};
+}
+async function claudeResearch(book){
+  if(!S.sample) throw new Error("Claude isn't available in this view. Open the page in claude.ai while signed in.");
+  const n=Math.max(book.count, 20);
+  const prompt = `You are an educational content designer planning an ORIGINAL children's coloring book.
+Topic: ${book.theme}. Audience age: ${book.age}.
+Return JSON only, shaped exactly:
+{"overview": string (2-3 sentences),
+ "sections": [{"name": string, "stage": one of "introduction","tools","processes","applications","careers", "goals": string}] (exactly 5, in that learning order),
+ "subjects": [{"stage": 0-4 (index into sections), "subject": short title, "scene": one-sentence description of a drawable scene, "fact": one accurate child-friendly sentence (max 25 words), "vocabulary": one word, "question": one short question}] (at least ${Math.min(n,60)}, all distinct, spread across the 5 stages),
+ "pitfalls": [string] (accuracy and safety mistakes to avoid),
+ "references": [{"title": string, "publisher": string, "url": string}] (reputable educational or government sources you are confident exist)}
+Rules: facts must be accurate; never suggest experiments or unsafe activities for children; no brand names or copyrighted characters.`;
+  const data = await S.sample.json(prompt, {modelTier:"default"});
+  if(!data || !Array.isArray(data.subjects) || !data.subjects.length) throw new Error("Claude's reply had no subjects. Try again.");
+  const secs=(data.sections||[]).slice(0,5);
+  return {mode:"Researched by Claude (not live web; verify facts and links)", overview:String(data.overview||""), sections:secs.length===5?secs:offlineResearch(book).sections,
+    subjects:data.subjects.filter(s=>s&&s.subject).map(s=>({stage:clamp(+s.stage||0,0,4),subject:String(s.subject).slice(0,120),scene:String(s.scene||s.subject).slice(0,300),fact:String(s.fact||"").slice(0,240),vocabulary:String(s.vocabulary||"").slice(0,40),question:String(s.question||"").slice(0,140),verified:false,sources:[]})),
+    references:(data.references||[]).filter(r=>r&&r.title).slice(0,10).map(r=>({title:String(r.title),publisher:String(r.publisher||""),url:/^https:\/\//.test(r.url||"")?String(r.url):"",license:"Suggested by Claude; check the link"})),
+    pitfalls:(data.pitfalls||[]).map(String).slice(0,10), verified:false};
+}
+function recommend(n){ let lo,hi; if(REC[n]) [lo,hi]=REC[n]; else { const ks=Object.keys(REC).map(Number); if(n<10){lo=hi=1;} else if(n>100){lo=Math.ceil(n/10);hi=Math.ceil(n/8);} else {const k=Math.max(...ks.filter(x=>x<=n)); [lo,hi]=REC[k];} } return {lo,hi,rec:(lo<=5&&5<=hi)?5:lo}; }
+function allocate(total,k){ const b=Math.floor(total/k), e=total%k; return Array.from({length:k},(_,i)=>b+(i<e?1:0)); }
+function mapStages(stages,k){
+  const n=stages.length, out=[];
+  if(k<=n){ let i=0; for(const g of allocate(n,k)){ const grp=stages.slice(i,i+g); out.push({name:grp.map(s=>s.name).join(" & "),stage:grp[0].stage,idx:grp.map((_,j)=>i+j),goals:grp.map(s=>s.goals).join(" ")}); i+=g; } }
+  else { allocate(k,n).forEach((p,i)=>{ for(let j=0;j<p;j++) out.push({name:stages[i].name+(p>1?" · Part "+(j+1):""),stage:stages[i].stage,idx:[i],part:[j,p],goals:stages[i].goals}); }); }
+  return out;
+}
+function pickSubjects(subjects, sec, count, used){
+  let pool=subjects.filter(s=>sec.idx.includes(s.stage));
+  if(sec.part){ const [j,p]=sec.part, size=Math.ceil(pool.length/p); pool=pool.slice(j*size,(j+1)*size); }
+  if(!pool.length) pool=subjects.slice();
+  const out=[]; let v=0;
+  while(out.length<count && v<60){ for(const s of pool){ if(out.length>=count) break; const [ts,tc]=VARIANTS[v%VARIANTS.length]; const subj=ts.replace("{s}",s.subject); if(used.has(subj.toLowerCase())) continue; used.add(subj.toLowerCase()); out.push({...s,subject:subj,scene:tc.replace("{c}",s.scene),variant:v}); } v++; }
+  return out;
+}
+function newPage(spec, sectionId){ return {id:newId(),sectionId,subject:spec.subject,scene:spec.scene,fact:spec.fact||"",vocabulary:spec.vocabulary||"",question:spec.question||"",variant:spec.variant||0,verified:!!spec.verified,caption:"",captionStatus:"missing",status:"planned",locked:false,cur:null,lineScale:1,version:1,error:""}; }
+function buildPlan(book,k){
+  const r=book.research; const secs=mapStages(r.sections,k); const counts=allocate(book.count,k); const used=new Set();
+  book.sections=[]; book.pages=[];
+  secs.forEach((s,i)=>{ const sec={id:newId(),name:s.name,stage:s.stage,goals:s.goals,count:counts[i],instructions:"",complexity:"medium"}; book.sections.push(sec); pickSubjects(r.subjects,s,counts[i],used).forEach(spec=>book.pages.push(newPage(spec,sec.id))); });
+  book.pages.forEach(p=>composeCaption(book,p));
+}
+function orderPages(book){ const pos={}; book.sections.forEach((s,i)=>pos[s.id]=i); book.pages.sort((a,b)=>(pos[a.sectionId]??99)-(pos[b.sectionId]??99)); }
+function pageNo(book,p){ return book.pages.indexOf(p)+1; }
+function setSectionCount(book, sec, n){
+  const mine=book.pages.filter(p=>p.sectionId===sec.id);
+  if(n<mine.length){ const removable=mine.slice().reverse().filter(p=>!p.locked&&p.status!=="approved"&&!p.cur); if(removable.length<mine.length-n) return "Can't shrink: the remaining pages already have artwork or approvals."; const drop=new Set(removable.slice(0,mine.length-n).map(p=>p.id)); book.pages=book.pages.filter(p=>!drop.has(p.id)); }
+  else if(n>mine.length){ const used=new Set(book.pages.map(p=>p.subject.toLowerCase())); const idx=book.sections.indexOf(sec); const stageIdx=Math.min(4,Math.max(0,STAGE_ORDER.indexOf(sec.stage))); const extra=pickSubjects(book.research.subjects,{idx:[stageIdx<0?Math.min(idx,4):stageIdx]},n-mine.length,used); const last=mine.length?book.pages.indexOf(mine[mine.length-1]):book.pages.length-1; const add=extra.map(spec=>newPage(spec,sec.id)); add.forEach(p=>composeCaption(book,p)); book.pages.splice(last+1,0,...add); }
+  sec.count=n; book.count=book.pages.length; orderPages(book); return null;
+}
+
+/* ============================================================ captions */
+function capSettings(book){ return Object.assign({enabled:true,length:"short",funFact:false,vocabulary:false,question:false,fontPt:13,maxLines:3}, book.captions||{}); }
+function composeCaption(book,p){
+  const st=capSettings(book); const parts=[];
+  if(p.variant && p.question){ parts.push(p.question); if(p.vocabulary) parts.push("Word to know: "+p.vocabulary+"."); }
+  else if(p.fact) parts.push((st.funFact?"Fun fact: ":"")+p.fact);
+  if(st.vocabulary && p.vocabulary && !parts.some(x=>x.startsWith("Word to know"))) parts.push("New word: "+p.vocabulary+".");
+  if(st.question && p.question && !parts.includes(p.question)) parts.push(p.question);
+  if(!parts.length) parts.push("Color the picture of "+p.subject.toLowerCase()+"!");
+  let t=parts.join(" "); const lim={short:170,medium:260,long:360}[st.length]||170;
+  if(t.length>lim){ let o=""; for(const s of t.split(/(?<=[.!?])\s+/)){ if((o+" "+s).trim().length>lim) break; o=(o+" "+s).trim(); } t=o||t.slice(0,lim); }
+  setCaption(book,p,t,false);
+}
+const measureCtx = document.createElement("canvas").getContext("2d");
+function wrapLines(text, widthPx, font){ measureCtx.font=font; const lines=[]; let cur=""; for(const w of String(text).split(/\s+/).filter(Boolean)){ const t=cur?cur+" "+w:w; if(measureCtx.measureText(t).width<=widthPx) cur=t; else { if(cur) lines.push(cur); cur=w; } } if(cur) lines.push(cur); return lines; }
+function capFont(book){ const st=capSettings(book); return `${Math.round(st.fontPt*DPI/72)}px "Atkinson Hyperlegible", sans-serif`; }
+function checkCaption(book,p,text){
+  const st=capSettings(book), g=geometry(book); const lines=wrapLines(text, g.artW*DPI, capFont(book));
+  const unsafe=/\b(try this at home|mix (?:the )?chemicals|light a fire|drink it|taste it)\b/i.test(text);
+  const words=(text.match(/[A-Za-z']+/g)||[]); const sents=Math.max(1,(text.match(/[.!?]+/g)||[]).length);
+  const syl=words.reduce((a,w)=>{const g2=(w.toLowerCase().match(/[aeiouy]+/g)||[]).length; return a+Math.max(1,g2-(/e$/i.test(w)&&g2>1?1:0));},0);
+  const grade=words.length?+(0.39*words.length/sents+11.8*syl/words.length-15.59).toFixed(1):0;
+  const kw=s=>new Set((s.toLowerCase().match(/[a-z]{4,}/g)||[]).map(x=>x.replace(/s$/,"")));
+  const a=kw(text), b=kw(p.subject+" "+p.scene+" "+p.vocabulary); const rel=[...a].some(x=>b.has(x));
+  const checks=[
+    {id:"Fits the caption band",ok:lines.length<=st.maxLines,mand:true,msg:`${lines.length} line(s) at ${st.fontPt} pt (max ${st.maxLines})`},
+    {id:"Safe for children",ok:!unsafe,mand:true,msg:unsafe?"Suggests an unsafe activity":"No unsafe suggestions"},
+    {id:"Reading level",ok:grade<=({"3-5":5,"4-8":6,"6-9":8,"8-12":10}[book.age]||10),mand:false,msg:"Approx. grade "+grade},
+    {id:"Matches the picture",ok:rel,mand:false,msg:rel?"Shares words with the scene":"No words in common with the scene"},
+    {id:"Fact has a source",ok:!!p.verified,mand:false,msg:p.verified?"From the reviewed knowledge pack":"Not verified, review it yourself"},
+  ];
+  return {lines,checks,passed:checks.every(c=>c.ok||!c.mand)};
+}
+function setCaption(book,p,text,human){
+  const r=checkCaption(book,p,text); p.caption=text;
+  p.captionStatus=!r.passed?"invalid":(human||r.checks.every(c=>c.ok))?"ok":"review"; return r;
+}
+
+/* ============================================================ art engines */
+function drawSketch(ctx,W,H,key,lw){
+  const r=rng(key), R=(a,b)=>a+(b-a)*r(), I=(a,b)=>Math.floor(R(a,b+1)), pick=a=>a[Math.floor(r()*a.length)];
+  ctx.save(); ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H); ctx.strokeStyle="#000"; ctx.fillStyle="#fff"; ctx.lineWidth=lw; ctx.lineJoin="round"; ctx.lineCap="round";
+  const P=()=>ctx.beginPath(), Sk=()=>ctx.stroke();
+  const pad=Math.min(W,H)*0.07, gy=H*R(0.78,0.86); P(); ctx.moveTo(pad,gy); ctx.lineTo(W-pad,gy); Sk();
+  const cx=W/2+R(-W/12,W/12), bw=W*R(0.34,0.48), bh=H*R(0.34,0.46), top=gy-bh, shape=pick(["tank","tower","round","house"]);
+  if(shape==="tank"){ P(); ctx.roundRect(cx-bw/2,top,bw,bh,bw/6); Sk(); for(let i=0,n=I(2,4);i<n;i++){ const rr=bw/I(8,12), x=cx-bw/3+i*bw/4; P(); ctx.arc(x,top+bh/4,rr,0,7); Sk(); } }
+  else if(shape==="tower"){ const tw=bw/2, t0=top-bh/4; P(); ctx.rect(cx-tw/2,t0,tw,gy-t0); Sk(); for(let k=1,n=I(4,7);k<n;k++){ const y=t0+k*bh/6; P(); ctx.moveTo(cx-tw/2,y); ctx.lineTo(cx+tw/2,y); Sk(); } P(); ctx.ellipse(cx,t0,tw/2,tw/4,0,0,7); ctx.fill(); Sk(); }
+  else if(shape==="round"){ const rr=Math.min(bw,bh)/2; P(); ctx.arc(cx,gy-rr,rr,0,7); Sk(); P(); ctx.arc(cx,gy-rr,rr/2.2,0,7); Sk(); }
+  else { P(); ctx.rect(cx-bw/2,top+bh/3,bw,bh*2/3); Sk(); P(); ctx.moveTo(cx-bw/2-lw,top+bh/3); ctx.lineTo(cx,top); ctx.lineTo(cx+bw/2+lw,top+bh/3); ctx.closePath(); Sk(); P(); ctx.rect(cx-bw/10,gy-bh/3,bw/5,bh/3); Sk(); }
+  for(let i=0,n=I(1,3);i<n;i++){ const side=r()<.5?-1:1, y=R(top+bh/5,gy-bh/5), x0=cx+side*bw/2, x1=clamp(x0+side*R(W/12,W/5),pad,W-pad); P(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.lineTo(x1,gy); Sk(); }
+  for(let i=0;i<6;i++){ const kind=pick(["circle","star","cloud","square"]), s=R(Math.min(W,H)/30,Math.min(W,H)/15), x=R(pad*2,W-pad*2), y=top>pad*5?R(pad*2,top-pad):R(gy+pad/2,H-pad);
+    P(); if(kind==="circle") ctx.arc(x,y,s,0,7); else if(kind==="square") ctx.rect(x-s,y-s,2*s,2*s);
+    else if(kind==="star"){ for(let k=0;k<10;k++){ const a=Math.PI/2+k*Math.PI/5, rr=k%2?s*.45:s; ctx.lineTo(x+rr*Math.cos(a),y-rr*Math.sin(a)); } ctx.closePath(); }
+    else { ctx.arc(x-s*.7,y,s*.55,0,7); ctx.moveTo(x+s*.55,y); ctx.arc(x,y-s*.2,s*.7,0,7); ctx.moveTo(x+s*1.25,y); ctx.arc(x+s*.7,y,s*.55,0,7); }
+    Sk(); }
+  ctx.restore();
+}
+const SVG_TAGS=new Set(["svg","g","path","circle","ellipse","rect","line","polyline","polygon","title","desc","defs"]);
+function sanitizeSvg(text){
+  const m=String(text).match(/<svg[\s\S]*<\/svg>/i); if(!m) throw new Error("The reply didn't contain an SVG drawing.");
+  const doc=new DOMParser().parseFromString(m[0],"image/svg+xml");
+  if(doc.querySelector("parsererror")) throw new Error("The SVG drawing was malformed.");
+  const root=doc.documentElement;
+  (function walk(el){ for(const ch of [...el.children]){ if(!SVG_TAGS.has(ch.localName)){ ch.remove(); continue; } walk(ch); }
+    for(const a of [...el.attributes]){ const n=a.name.toLowerCase(), v=a.value; if(n.startsWith("on")||n.includes("href")||/url\s*\(|javascript:/i.test(v)) el.removeAttribute(a.name); } })(root);
+  root.setAttribute("xmlns","http://www.w3.org/2000/svg"); if(!root.getAttribute("viewBox")) root.setAttribute("viewBox","0 0 750 900");
+  root.removeAttribute("width"); root.removeAttribute("height");
+  return new XMLSerializer().serializeToString(root);
+}
+async function claudeDraw(book,p,tier){
+  if(!S.sample) throw Object.assign(new Error("Claude artist isn't available in this view. Open the page in claude.ai while signed in, or use the Sketch engine."),{code:"unavailable"});
+  const sec=book.sections.find(s=>s.id===p.sectionId)||{};
+  const prompt=`You illustrate children's coloring books. Draw ONE original coloring page as an SVG.
+Subject: ${p.subject}
+Scene: ${p.scene}
+Audience: children aged ${book.age}. Book style: ${book.style||"clean cartoon line art"}. Detail level: ${sec.complexity||"medium"}.${sec.instructions?"\nSection guidance: "+sec.instructions:""}
+Rules:
+- Root: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 900">; first child <rect width="750" height="900" fill="#fff"/>.
+- Black outlines only: stroke="#000", fill="none" or fill="#fff" (small solid black details like pupils are fine). stroke-width 3 to 7, stroke-linecap="round", stroke-linejoin="round".
+- Closed shapes with large open areas to color. Main subject large and centered, at least 40 units from every edge. A few simple supporting objects and a simple ground line.
+- No text, letters, numbers, gradients, gray, shading, hatching, images, filters, styles or scripts. No brand logos or known characters.
+- Use path, circle, ellipse, rect, line, polyline, polygon, g. Keep it under 14000 characters.
+Reply with the SVG only.`;
+  const res=await S.sample(prompt,{modelTier:tier});
+  if(res.truncated) throw new Error("Claude's drawing was cut short. Try again or use a simpler subject.");
+  return sanitizeSvg(res.text);
+}
+function scaleStrokes(svg, k){ if(Math.abs(k-1)<0.01) return svg; return svg.replace(/stroke-width\s*=\s*"([\d.]+)"/g,(m,v)=>`stroke-width="${(+v*k).toFixed(2)}"`).replace(/stroke-width\s*:\s*([\d.]+)/g,(m,v)=>`stroke-width:${(+v*k).toFixed(2)}`); }
+function svgImage(svg){ return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"})); img.onload=()=>{URL.revokeObjectURL(url);res(img);}; img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("The drawing couldn't be rendered."));}; img.src=url; }); }
+/** Draw a revision into a box on ctx (contain). Art is vector, so it is rendered natively at the requested resolution. */
+async function drawRev(ctx,rev,x,y,w,h,lineScale=1){
+  const ar=750/900, bw=Math.min(w,h*ar), bh=bw/ar, ox=x+(w-bw)/2, oy=y+(h-bh)/2;
+  if(rev.kind==="sketch"){ ctx.save(); ctx.translate(ox,oy); const s=bw/750; ctx.scale(s,s); drawSketch(ctx,750,900,rev.seed,7*lineScale); ctx.restore(); }
+  else { const img=await svgImage(scaleStrokes(rev.svg,lineScale)); ctx.fillStyle="#fff"; ctx.fillRect(ox,oy,bw,bh); ctx.drawImage(img,ox,oy,bw,bh); }
+}
+async function renderCanvas(rev,lineScale,W=375,H=450){ const c=document.createElement("canvas"); c.width=W; c.height=H; const ctx=c.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H); await drawRev(ctx,rev,0,0,W,H,lineScale); return c; }
+async function thumb(rev,lineScale=1){ const k=rev.id+"@"+lineScale; if(thumbCache.has(k)) return thumbCache.get(k); const p=renderCanvas(rev,lineScale,375,450).then(c=>c.toDataURL("image/png")); thumbCache.set(k,p); p.catch(()=>thumbCache.delete(k)); return p; }
+function analyze(c){
+  const w=c.width,h=c.height,d=c.getContext("2d").getImageData(0,0,w,h).data, b=Math.max(2,Math.round(Math.min(w,h)*.02));
+  let ink=0,mid=0,sx=0,sy=0,bn=0,bw=0,touch=false;
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const i=(y*w+x)*4, v=d[i]*.299+d[i+1]*.587+d[i+2]*.114;
+    if(v<128){ink++;sx+=x;sy+=y; if(x<=1||y<=1||x>=w-2||y>=h-2) touch=true;} if(v>40&&v<215) mid++;
+    if(x<b||y<b||x>=w-b||y>=h-b){bn++; if(v>235) bw++;} }
+  const N=w*h, cx=ink?sx/ink/w:.5, cy=ink?sy/ink/h:.5;
+  const t=document.createElement("canvas"); t.width=17; t.height=16; const tc=t.getContext("2d"); tc.drawImage(c,0,0,17,16); const td=tc.getImageData(0,0,17,16).data; let hash="";
+  for(let y=0;y<16;y++) for(let x=0;x<16;x++){ const i=(y*17+x)*4, j=i+4; hash+=(td[j]+td[j+1]+td[j+2])>(td[i]+td[i+1]+td[i+2])?"1":"0"; }
+  const inkR=ink/N, midR=mid/N, border=bw/bn;
+  const clarity=clamp(100-midR*600,0,100), comp=100*(.6*(1-Math.min(1,(Math.abs(cx-.5)+Math.abs(cy-.5))*1.5))+.4*(touch?0:1)), color=100*(.6*(1-Math.min(1,Math.abs(inkR-.09)/.14))+.4*Math.min(1,border));
+  return {ink:+inkR.toFixed(4),mid:+midR.toFixed(4),border:+border.toFixed(4),touch,cx:+cx.toFixed(3),cy:+cy.toFixed(3),hash,scores:{"Line clarity":Math.round(clarity),"Composition":Math.round(comp),"Coloring suitability":Math.round(color)}};
+}
+function hamming(a,b){ let n=0; for(let i=0;i<Math.min(a.length,b.length);i++) if(a[i]!==b[i]) n++; return n; }
+function qaChecks(book,p,m){
+  if(!m) return [];
+  const others=book.pages.filter(o=>o!==p&&o.cur).map(o=>curRev(o,book)?.metrics?.hash).filter(Boolean);
+  const dup=others.some(h=>hamming(h,m.hash)<=10);
+  return [
+    {id:"White background",ok:m.border>=.97,mand:true,msg:Math.round(m.border*100)+"% of the edge is white"},
+    {id:"Line coverage",ok:m.ink>=.01&&m.ink<=.35,mand:true,msg:(m.ink*100).toFixed(1)+"% ink (1–35%)"},
+    {id:"Open coloring space",ok:m.ink<=.22,mand:false,msg:Math.round((1-m.ink)*100)+"% open space"},
+    {id:"No gray fills",ok:m.mid<=.06,mand:false,msg:(m.mid*100).toFixed(1)+"% gray pixels before print cleanup (cleanup makes pure black and white)"},
+    {id:"Not cropped",ok:!m.touch,mand:false,msg:m.touch?"Lines touch the edge":"Artwork stays inside the frame"},
+    {id:"Unique page",ok:!dup,mand:true,msg:dup?"Looks almost identical to another page":"No near-duplicates in this book"},
+    {id:"Print resolution",ok:true,mand:true,msg:"Vector art, rendered natively at 300 PPI on export (no upscaling)"},
+  ];
+}
+function qaPassed(book,p){ const r=curRev(p,book); return !!r && qaChecks(book,p,r.metrics).every(c=>c.ok||!c.mand); }
+
+/* ============================================================ generation queue */
+async function makeRev(book,p,engine){
+  const t0=performance.now(); let rev;
+  if(engine==="sketch") rev={id:newId(),engine,kind:"sketch",seed:p.subject+"|"+newId(),t:Date.now()};
+  else rev={id:newId(),engine,kind:"svg",svg:await claudeDraw(book,p,ENGINES[engine].tier),t:Date.now()};
+  rev.ms=Math.round(performance.now()-t0);
+  rev.metrics=analyze(await renderCanvas(rev,1));
+  return rev;
+}
+function storeRev(book,p,rev){
+  const a=artOf(p.id,book); a.revs.push(rev);
+  const keep=new Set([p.cur,rev.id]); while(a.revs.length>6){ const i=a.revs.findIndex(r=>!keep.has(r.id)); if(i<0) break; a.revs.splice(i,1); }
+  Store.putArt(book.id,p.id,a);
+}
+function enqueue(book,pages,engine){
+  let n=0; for(const p of pages){ if(p.locked||Q.items.some(it=>it.page===p)) continue; p.status="queued"; Q.items.push({book,page:p,engine:engine||book.engine,version:p.version}); n++; }
+  Q.total+=n; save(book); runQueue(); render(); return n;
+}
+async function runQueue(){
+  if(Q.running) return; Q.running=true; Q.paused=false;
+  while(Q.items.length && !Q.paused){
+    const it=Q.items.shift(), {book,page:p}=it; if(p.locked){ continue; }
+    Q.current=it; p.status="generating"; render();
+    const startVersion=p.version;
+    try{
+      const rev=await makeRev(book,p,it.engine);
+      if(p.locked||p.version!==startVersion){ storeRev(book,p,rev); toast(`Page ${pageNo(book,p)} changed while drawing. The new art is kept in its history.`); if(p.status==="generating") p.status=p.cur?"review":"planned"; }
+      else { remember(book,p,"draw"); const hadCap=!!p.caption; p.cur=rev.id; p.status="review"; p.error=""; p.version++; storeRev(book,p,rev); if(!hadCap) composeCaption(book,p); else if(p.captionStatus==="ok" && it.newSubject) p.captionStatus="review"; }
+    }catch(e){
+      p.status=p.cur?"review":"failed"; p.error=e.message||String(e);
+      if(["rate_limited","not_granted","unavailable"].includes(e.code)){ Q.paused=true; toast(e.code==="rate_limited"?"Claude usage limit reached. The queue is paused; resume later.":p.error); }
+      else toast(`Page ${pageNo(book,p)}: ${p.error}`);
+    }
+    Q.done++; Q.current=null; save(book); render();
+  }
+  if(!Q.items.length){ Q.done=0; Q.total=0; }
+  Q.running=false; render();
+}
+function pauseQueue(){ Q.paused=true; render(); }
+function cancelQueue(){ for(const it of Q.items){ it.page.status=it.page.cur?"review":"planned"; save(it.book); } Q.items=[]; Q.total=Q.done; render(); }
+function nextPages(book,n){ return book.pages.filter(p=>!p.locked&&["planned","failed"].includes(p.status)&&!Q.items.some(it=>it.page===p)).slice(0,n); }
+
+/* ============================================================ history / undo */
+const SNAP=["status","locked","cur","caption","captionStatus","subject","scene","lineScale"];
+function remember(book,p,action){ book.history=book.history||[]; const before={}; SNAP.forEach(k=>before[k]=p[k]); book.history.push({pid:p.id,action,before,t:Date.now()}); if(book.history.length>60) book.history.shift(); }
+function undo(book){ const h=(book.history||[]).pop(); if(!h) return null; const p=book.pages.find(x=>x.id===h.pid); if(!p) return null; if(p.locked && h.before.locked){ book.history.push(h); return "locked"; } Object.assign(p,h.before); p.version++; save(book); return {p,action:h.action}; }
+
+/* ============================================================ page actions */
+function setStatus(book,p,action){
+  if(action==="approve"){ if(p.locked||!p.cur) return false; remember(book,p,"approve"); p.status="approved"; if(p.captionStatus==="review") p.captionStatus="ok"; }
+  else if(action==="reject"){ if(p.locked||!p.cur) return false; remember(book,p,"revision"); p.status="revision"; }
+  else if(action==="lock"){ if(p.locked||!p.cur) return false; remember(book,p,"lock"); p.locked=true; p.status="locked"; }
+  else if(action==="unlock"){ if(!p.locked) return false; remember(book,p,"unlock"); p.locked=false; p.status="approved"; }
+  p.version++; save(book); return true;
+}
+function lineWeight(book,p,dir){ if(p.locked||!p.cur) return false; remember(book,p,"line weight"); p.lineScale=+clamp(p.lineScale*(dir>0?1.35:1/1.35),0.4,3).toFixed(3); if(p.status==="approved") p.status="review"; p.version++; save(book); refreshMetrics(book,p); return true; }
+async function refreshMetrics(book,p){ const r=curRev(p,book); if(!r) return; const m=analyze(await renderCanvas(r,p.lineScale)); r.metrics=m; Store.putArt(book.id,p.id,artOf(p.id,book)); render(); }
+
+/* ============================================================ Live Book Editor */
+const NUMW={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,twelve:12,fifteen:15,twenty:20};
+function parsePages(t){ const out=[]; const re=/pages?\s+((?:\d+\s*(?:-|–|to|through|and|,|&)?\s*)+)/gi; let m; while((m=re.exec(t))){ let c=m[1].replace(/(\d+)\s*(?:-|–|to|through)\s*(\d+)/g,(_,a,b)=>{for(let i=+a;i<=+b;i++) out.push(i); return " ";}); (c.match(/\d+/g)||[]).forEach(x=>out.push(+x)); } return [...new Set(out)].sort((a,b)=>a-b); }
+function parseEngine(t){ const l=t.toLowerCase(); if(/sketch|offline/.test(l)) return "sketch"; if(/claude|artist/.test(l)) return /detail|complex|best/.test(l)?"claude-complex":/quick|fast/.test(l)?"claude-quick":"claude-default"; return null; }
+function parseCommand(t){
+  const l=t.toLowerCase().trim(), pages=parsePages(t), sec=(l.match(/section\s+(\d+)/)||[])[1], all=/\ball (the )?(pages|illustrations)\b|whole book/.test(l), engine=parseEngine(t);
+  if(/^(yes|confirm|go ahead|do it|proceed)\b/.test(l)) return {intent:"confirm"};
+  if(/^(no|cancel|never ?mind)\b/.test(l)) return {intent:"cancel"};
+  if(/\b(help|what can you do)\b/.test(l)) return {intent:"help"};
+  if(/\bundo\b/.test(l)) return {intent:"undo"};
+  if(/keep (all )?(the )?approved|lock (all )?(the )?approved/.test(l)) return {intent:"lockApproved"};
+  if(/\bunlock\b/.test(l)) return {intent:"unlock",pages,sec,all};
+  if(/\block\b/.test(l)) return {intent:"lock",pages,sec,all};
+  if(/\bapprove\b/.test(l)) return {intent:"approve",pages,sec,all};
+  if(/\breject\b|revision/.test(l)) return {intent:"reject",pages,sec,all};
+  if(/\b(compare|battle|side by side)\b/.test(l)) return {intent:"compare",pages,engine};
+  let m=t.match(/(?:set|change|make) (?:the )?caption (?:on|for|of) page (\d+) (?:to|say|read)[: ]+["“']?(.+?)["”']?\.?$/i); if(m) return {intent:"setCaption",pages:[+m[1]],text:m[2]};
+  if(/caption/.test(l)) return {intent:"rewriteCaption",pages,sec,all,style:(l.match(/shorter|simpler|question|vocabulary|funnier/)||[""])[0]};
+  m=l.match(/(thicker|bolder|heavier|thinner|lighter|finer)\s+(lines|outlines)|(lines|outlines)\s+(?:a (?:bit|little) )?(thicker|bolder|heavier|thinner|lighter|finer)/); if(m){ const w=m[1]||m[4]; return {intent:"lineWeight",pages,sec,all,dir:/thick|bold|heav/.test(w)?1:-1}; }
+  m=t.match(/change page (\d+) to (?:show|be|depict|feature|draw)\s+(.+?)(?:\s+instead of\s+(.+))?\.?$/i); if(m) return {intent:"changeSubject",pages:[+m[1]],text:m[2],engine};
+  m=t.match(/make section (\d+) (more|less) (.+?)\.?$/i); if(m) return {intent:"sectionNote",sec:m[1],text:m[2].toLowerCase()+" "+m[3]};
+  m=l.match(/generate (?:the )?next (\w+)/); if(m) return {intent:"generateNext",count:+m[1]||NUMW[m[1]]||5,engine};
+  m=l.match(/use (?:the )?(.+?) for (?:the )?(next section|section (\d+))/); if(m && (engine||/best|highest|top/.test(m[1]))) return {intent:"sectionEngine",sec:m[3],engine:engine||"claude-complex"};
+  if(/\b(re-?generate|redo|redraw|re-?draw|try again)\b/.test(l)||(/\b(generate|draw)\b/.test(l)&&(pages.length||sec||all))) return {intent:"regenerate",pages,sec,all,engine};
+  return null;
+}
+function lastPages(book){ for(let i=(book.chat||[]).length-1;i>=0;i--){ const c=book.chat[i]; if(c.cmd&&c.cmd.pages&&c.cmd.pages.length) return c.cmd.pages; } return []; }
+function targets(book,c){ if(c.pages&&c.pages.length) return c.pages.map(n=>book.pages[n-1]).filter(Boolean); if(c.sec){ const s=book.sections[+c.sec-1]; return s?book.pages.filter(p=>p.sectionId===s.id):[]; } if(c.all) return book.pages.slice(); return []; }
+async function handleChat(text){
+  const book=S.book; if(!book) return;
+  book.chat=book.chat||[]; book.chat.push({role:"u",text,t:Date.now()});
+  let cmds=text.split(/\n+|;\s*|\s+and then\s+|\s+then\s+/).map(s=>s.trim()).filter(Boolean).map(parseCommand).filter(Boolean);
+  let by="parser";
+  if(!cmds.length && S.sample){
+    try{ const out=await S.sample.json(`Translate this coloring-book editing request into commands. The book has ${book.pages.length} pages and ${book.sections.length} sections.
+Request: ${JSON.stringify(text)}
+Return JSON {"commands":[{"intent": one of "regenerate","compare","lineWeight","rewriteCaption","setCaption","changeSubject","sectionNote","generateNext","approve","reject","lock","unlock","lockApproved","undo", "pages":[numbers], "sec": number or null, "all": boolean, "text": string, "count": number, "dir": 1 or -1, "engine": one of "sketch","claude-quick","claude-default","claude-complex" or null}]}. Use an empty list if it is not an editing request.`,{modelTier:"quick"});
+      cmds=(out&&Array.isArray(out.commands)?out.commands:[]).filter(c=>c&&typeof c.intent==="string").map(c=>({...c,pages:(c.pages||[]).map(Number).filter(n=>n>0),sec:c.sec?String(c.sec):undefined,engine:ENGINES[c.engine]?c.engine:null}));
+      by="Claude";
+    }catch(e){}
+  }
+  const ctx=lastPages(book);
+  const lines=[];
+  if(!cmds.length) lines.push("I couldn't turn that into a book edit. Try “Regenerate page 4 with Claude”, “Make the lines thicker on pages 6–12”, “Rewrite the caption on page 9” or “help”.");
+  for(const c of cmds){ if(["regenerate","compare","lineWeight","rewriteCaption","approve","reject","lock","unlock"].includes(c.intent) && !(c.pages&&c.pages.length) && !c.sec && !c.all && ctx.length) c.pages=c.intent==="compare"?ctx.slice(0,1):ctx; lines.push(await execCmd(book,c)); }
+  book.chat.push({role:"a",text:lines.join("\n"),cmd:cmds[cmds.length-1]||null,by,t:Date.now()});
+  if(book.chat.length>80) book.chat.splice(0,book.chat.length-80);
+  save(book); render();
+}
+async function execCmd(book,c,confirmed=false){
+  const T=targets(book,c), nums=a=>"["+a.map(p=>pageNo(book,p)).join(", ")+"]";
+  const locked=T.filter(p=>p.locked), skipNote=locked.length?`Skipped locked page(s) ${nums(locked)}. `:"";
+  switch(c.intent){
+    case "help": return "I can regenerate pages (with the Sketch engine or Claude), compare engines on a page, make lines thicker or thinner, rewrite or set captions, change what a page shows, add guidance to a section, generate the next N pages, approve, reject, lock or unlock pages, keep approved pages locked, and undo.";
+    case "confirm": { const pend=book.pending; book.pending=null; return pend?await execCmd(book,pend,true):"Nothing is waiting for confirmation."; }
+    case "cancel": book.pending=null; return "OK, nothing changed.";
+    case "undo": { const r=undo(book); return r==="locked"?"The last change is on a locked page. Unlock it first.":r?`Undid “${r.action}” on page ${pageNo(book,r.p)}.`:"Nothing to undo."; }
+    case "lockApproved": { const a=book.pages.filter(p=>p.status==="approved"&&!p.locked); a.forEach(p=>setStatus(book,p,"lock")); return `Locked ${a.length} approved page(s). Nothing can change them until you unlock them.`; }
+    case "approve": case "reject": case "lock": case "unlock": { if(!T.length) return "Which pages? For example “approve pages 1-5”."; const done=T.filter(p=>setStatus(book,p,c.intent)); return `${({approve:"Approved",reject:"Marked for revision:",lock:"Locked",unlock:"Unlocked"})[c.intent]} page(s) ${done.length?nums(done):"none (locked, empty or unchanged)"}.`; }
+    case "lineWeight": { if(!T.length) return "Which pages? For example “make the lines thicker on pages 6-12”."; const done=T.filter(p=>!p.locked&&p.cur&&lineWeight(book,p,c.dir)); return skipNote+(done.length?`Lines ${c.dir>0?"thicker":"thinner"} on page(s) ${nums(done)}. This is a local edit, so no drawing is redone.`:"No pages with artwork to change."); }
+    case "rewriteCaption": { if(!T.length) return "Which page's caption?"; const out=[]; for(const p of T){ if(p.locked) continue; remember(book,p,"caption"); const t=await rewriteCaption(book,p,c.style); const r=setCaption(book,p,t,false); out.push(`Page ${pageNo(book,p)}: “${t}”${r.passed?"":" (check fit)"}`); } save(book); return skipNote+(out.join("\n")||"No captions changed."); }
+    case "setCaption": { const p=T[0]; if(!p) return "Page not found."; if(p.locked) return `Page ${pageNo(book,p)} is locked.`; remember(book,p,"caption"); const r=setCaption(book,p,c.text,true); save(book); return `Page ${pageNo(book,p)} caption updated; the artwork is unchanged.`+(r.passed?"":" It doesn't fit the caption band, so shorten it."); }
+    case "changeSubject": { const p=T[0]; if(!p) return "Page not found."; if(p.locked) return `Page ${pageNo(book,p)} is locked.`; if(p.status==="approved"&&!confirmed){ book.pending=c; return `Page ${pageNo(book,p)} is approved. Reply “confirm” to change it, or “cancel”.`; } remember(book,p,"change subject"); p.subject=c.text[0].toUpperCase()+c.text.slice(1); p.scene=c.text; p.fact=""; p.verified=false; p.version++; p.captionStatus="review"; p.status="revision"; enqueue(book,[p],c.engine||book.engine); return `Page ${pageNo(book,p)} will now show ${c.text}. Its caption is flagged for review, and it's queued for drawing.`; }
+    case "sectionNote": { const s=book.sections[+c.sec-1]; if(!s) return "Section not found."; s.instructions=((s.instructions||"")+" Make it "+c.text+".").trim(); save(book); const aff=book.pages.filter(p=>p.sectionId===s.id&&!p.locked&&p.status!=="approved").map(p=>pageNo(book,p)); return `Section ${c.sec} “${s.name}” guidance updated. New drawings will be ${c.text}. Unapproved pages that would change: [${aff.join(", ")}]. Say “regenerate section ${c.sec}” to apply it now.`; }
+    case "sectionEngine": { let s=c.sec?book.sections[+c.sec-1]:book.sections.find(s=>book.pages.some(p=>p.sectionId===s.id&&!p.cur)); if(!s) return "No matching section."; s.engine=c.engine; save(book); return `Section “${s.name}” will use ${ENGINES[c.engine].label}.`; }
+    case "generateNext": { const pg=nextPages(book,c.count||5); if(!pg.length) return "Every page already has artwork or is queued."; const n=enqueue(book,pg,c.engine); return `Queued the next ${n} page(s): [${pg.map(p=>pageNo(book,p)).join(", ")}].`; }
+    case "regenerate": { if(!T.length) return "Which pages? For example “regenerate page 14” or “regenerate section 2”."; const appr=T.filter(p=>!p.locked&&p.status==="approved"); if(appr.length&&!confirmed){ book.pending=c; return skipNote+`Page(s) ${nums(appr)} are approved. Regenerating makes new versions for review; the old ones stay in history. Reply “confirm” or “cancel”.`; } const run=T.filter(p=>!p.locked); const n=enqueue(book,run,c.engine||null); return skipNote+(n?`Queued ${n} page(s) ${nums(run)}${c.engine?" with "+ENGINES[c.engine].label:""}. Other pages are untouched.`:"Nothing to regenerate."); }
+    case "compare": { const p=T[0]; if(!p) return "Which page should I compare?"; S.battlePage=p.id; if(c.engine) S.battleSel.add(c.engine); S.view="battle"; runBattle(book,p,[...S.battleSel]); return `Started a model battle for page ${pageNo(book,p)}: ${[...S.battleSel].map(e=>ENGINES[e].label).join(" vs ")}. The current artwork stays until you pick a winner.`; }
+  }
+  return "That command isn't supported yet.";
+}
+async function rewriteCaption(book,p,style){
+  if(S.sample){ try{ const o=await S.sample.json(`Write one caption for a children's coloring page (ages ${book.age}). Subject: ${p.subject}. Scene: ${p.scene}. Known fact: ${p.fact||"none"}. Current caption: ${p.caption}. Style request: ${style||"fresh wording"}. At most 160 characters, accurate, no unsafe activities. Return {"caption": string}.`,{modelTier:"quick"}); if(o&&o.caption) return String(o.caption).slice(0,300); }catch(e){} }
+  if(style==="shorter"||style==="simpler") return (p.fact||p.caption).split(/(?<=[.!?])\s+/)[0];
+  const parts=[p.question,p.vocabulary?"Word to know: "+p.vocabulary+".":"",p.fact].filter(Boolean); return parts.join(" ").slice(0,200)||p.caption;
+}
+
+/* ============================================================ battle */
+async function runBattle(book,p,engines){
+  book.battles=book.battles||{}; const b=book.battles[p.id]={engines,cands:[],status:"running",winner:null,t:Date.now()}; render();
+  for(const e of engines){ try{ const rev=await makeRev(book,p,e); rev.battle=true; artOf(p.id,book).revs.push(rev); b.cands.push({engine:e,rev:rev.id}); }catch(err){ b.cands.push({engine:e,error:err.message}); } render(); }
+  const a=artOf(p.id,book); const keep=new Set([p.cur,...b.cands.map(c=>c.rev)]); while(a.revs.length>10){ const i=a.revs.findIndex(r=>!keep.has(r.id)); if(i<0) break; a.revs.splice(i,1); }
+  Store.putArt(book.id,p.id,a); b.status="done"; save(book); render();
+}
+function pickWinner(book,p,revId,confirmed){
+  if(p.locked){ toast("This page is locked. Unlock it before replacing its artwork."); return; }
+  if(p.status==="approved"&&!confirmed){ S.confirm={kind:"winner",pid:p.id,rev:revId}; render(); return; }
+  remember(book,p,"battle winner"); p.cur=revId; p.status="review"; p.lineScale=1; p.version++; if(p.captionStatus==="ok") p.captionStatus="review"; book.battles[p.id].winner=revId; S.confirm=null; save(book); render(); toast(`Page ${pageNo(book,p)} now uses the winning drawing.`);
+}
+
+/* ============================================================ export */
+async function ensureFonts(){ try{ await Promise.all(['800 40px "Bricolage Grotesque"','400 40px "Atkinson Hyperlegible"','700 40px "Atkinson Hyperlegible"'].map(f=>document.fonts.load(f))); }catch{} }
+function bw(ctx,w,h,t=150){ const im=ctx.getImageData(0,0,w,h), d=im.data; for(let i=0;i<d.length;i+=4){ const v=d[i]*.299+d[i+1]*.587+d[i+2]*.114>t?255:0; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255; } ctx.putImageData(im,0,0); }
+function textBlock(ctx,text,x,y,w,font,lh,align="center"){ ctx.font=font; ctx.textAlign=align; ctx.textBaseline="alphabetic"; const lines=wrapLines(text,w,font); lines.forEach((ln,i)=>ctx.fillText(ln,align==="center"?x+w/2:x,y+i*lh)); return y+lines.length*lh; }
+async function renderInteriorPage(book,kind,p,num,proof){
+  const g=geometry(book), W=Math.round(g.w*DPI), H=Math.round(g.h*DPI); const c=document.createElement("canvas"); c.width=W; c.height=H; const ctx=c.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H); ctx.fillStyle="#000"; const recto=num%2===1, L=(recto?g.gutter:g.out)*DPI, CW=W-(g.gutter+g.out)*DPI;
+  if(kind==="title"){ let y=textBlock(ctx,book.title,L,H*.4,CW,'800 130px "Bricolage Grotesque"',150); if(book.subtitle) textBlock(ctx,book.subtitle,L,y+60,CW,'400 64px "Atkinson Hyperlegible"',80); if(book.author) textBlock(ctx,book.author,L,H*.82,CW,'700 60px "Atkinson Hyperlegible"',70); }
+  else if(kind==="copyright"){ textBlock(ctx,`${book.title}. Copyright © ${new Date().getFullYear()} ${book.author||"the author"}. All rights reserved. No part of this book may be reproduced without permission, except for personal coloring use. Illustrations are original artwork made with the help of AI drawing tools and reviewed by the publisher. Educational facts were checked by the publisher; this book does not suggest experiments for children to perform.`,L,H*.62,CW,'400 40px "Atkinson Hyperlegible"',56,"left"); }
+  else if(kind==="belongs"){ textBlock(ctx,"This book belongs to",L,H*.32,CW,'800 96px "Bricolage Grotesque"',110); ctx.fillRect(L+CW*.12,H*.42,CW*.76,6); textBlock(ctx,"Color each picture, then read the caption underneath to learn something new! Tip: slip a sheet of paper behind the page if you use markers.",L+CW*.08,H*.56,CW*.84,'400 52px "Atkinson Hyperlegible"',70); }
+  else if(kind==="contents"){ textBlock(ctx,"Contents",L,g.top*DPI+120,CW,'800 96px "Bricolage Grotesque"',110,"left"); let y=g.top*DPI+280; ctx.font='400 50px "Atkinson Hyperlegible"';
+    book.sections.forEach((s,i)=>{ const first=book.pages.findIndex(p=>p.sectionId===s.id); if(first<0) return; let label=`${i+1}. ${s.name}`; ctx.textAlign="left"; while(ctx.measureText(label).width>CW-200&&label.length>4) label=label.slice(0,-2)+"…"; ctx.fillText(label,L,y); ctx.textAlign="right"; ctx.fillText(String(5+2*first),L+CW,y); y+=84; }); }
+  else if(kind==="art"){ const r=curRev(p,book); if(r) await drawRev(ctx,r,L,g.top*DPI,g.artW*DPI,g.artH*DPI,p.lineScale); bw(ctx,W,H); ctx.fillStyle="#000";
+    if(capSettings(book).enabled&&p.caption){ const st=capSettings(book), px=Math.round(st.fontPt*DPI/72); textBlock(ctx,p.caption,L,H-g.bottom*DPI-CAP_BAND*DPI+px*1.2,g.artW*DPI,capFont(book),Math.round(px*1.3)); }
+    ctx.font='400 30px "Atkinson Hyperlegible"'; ctx.textAlign="center"; ctx.fillText(String(num),W/2,H-0.25*DPI); }
+  if(proof){ ctx.fillStyle="#c2413a"; ctx.font='700 34px "Atkinson Hyperlegible"'; ctx.textAlign="left"; ctx.fillText("PROOF · not for upload",40,60); }
+  return c;
+}
+async function buildInterior(book,proof,onProgress){
+  await ensureFonts(); const {jsPDF}=window.jspdf; const g=geometry(book);
+  const pdf=new jsPDF({unit:"in",format:[g.w,g.h],orientation:g.w>g.h?"landscape":"portrait",compress:true});
+  pdf.setProperties({title:book.title,author:book.author||"",creator:"Crayon Press Studio"});
+  const seq=[["title"],["copyright"],["belongs"],["contents"]]; book.pages.forEach(p=>{ seq.push(["art",p]); seq.push(["blank"]); });
+  for(let i=0;i<seq.length;i++){ const [kind,p]=seq[i]; if(i>0) pdf.addPage([g.w,g.h],g.w>g.h?"landscape":"portrait");
+    if(kind!=="blank"){ const c=await renderInteriorPage(book,kind,p,i+1,proof); pdf.addImage(c.toDataURL("image/jpeg",0.94),"JPEG",0,0,g.w,g.h,undefined,"FAST"); }
+    onProgress&&onProgress((i+1)/seq.length,`Page ${i+1} of ${seq.length}`); if(i%4===3) await sleep(0); }
+  return {blob:pdf.output("blob"),pages:seq.length};
+}
+function floodColor(img,palette,seed){
+  const {width:w,height:h,data:d}=img, seen=new Uint8Array(w*h), r=rng(seed);
+  const white=i=>d[i*4]>200&&d[i*4+1]>200&&d[i*4+2]>200;
+  function fill(sx,sy,col){ const st=[sy*w+sx]; seen[sy*w+sx]=1; while(st.length){ const k=st.pop(); d[k*4]=col[0];d[k*4+1]=col[1];d[k*4+2]=col[2]; const x=k%w,y=(k/w)|0; for(const n of [x>0?k-1:-1,x<w-1?k+1:-1,y>0?k-w:-1,y<h-1?k+w:-1]) if(n>=0&&!seen[n]&&white(n)){seen[n]=1;st.push(n);} } }
+  if(white(0)) fill(0,0,[235,244,252]);
+  const step=Math.max(8,Math.round(Math.min(w,h)/28));
+  for(let y=step>>1;y<h;y+=step) for(let x=step>>1;x<w;x+=step){ const k=y*w+x; if(!seen[k]&&white(k)) fill(x,y,palette[Math.floor(r()*palette.length)]); }
+}
+async function buildCover(book){
+  await ensureFonts(); const cg=coverGeo(book), W=Math.round(cg.fullW*DPI), H=Math.round(cg.fullH*DPI), B=0.125*DPI, safe=0.125*DPI;
+  const c=document.createElement("canvas"); c.width=W; c.height=H; const ctx=c.getContext("2d");
+  const bg=book.coverColor||"#2B57D0"; ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const backX=B, spineX=B+cg.w*DPI, frontX=spineX+cg.spine*DPI, FW=cg.w*DPI;
+  const drawn=book.pages.filter(p=>p.cur); const feat=book.pages.find(p=>p.id===book.coverPage&&p.cur)||drawn[0];
+  // front
+  ctx.fillStyle="#fff"; const fx=frontX+safe+0.35*DPI, fy=H*.24, fw=FW-2*safe-0.7*DPI, fh=H*.52; ctx.beginPath(); ctx.roundRect(fx,fy,fw,fh,60); ctx.fill();
+  if(feat){ const a=document.createElement("canvas"); a.width=900; a.height=1080; const actx=a.getContext("2d"); actx.fillStyle="#fff"; actx.fillRect(0,0,900,1080); await drawRev(actx,curRev(feat,book),0,0,900,1080,feat.lineScale); bw(actx,900,1080);
+    const im=actx.getImageData(0,0,900,1080); floodColor(im,[[255,196,61],[94,197,236],[255,128,120],[126,217,87],[186,140,255],[255,166,94]],feat.id); actx.putImageData(im,0,0);
+    const s=Math.min((fw-80)/900,(fh-80)/1080); ctx.drawImage(a,fx+(fw-900*s)/2,fy+(fh-1080*s)/2,900*s,1080*s); }
+  ctx.fillStyle="#fff"; let y=textBlock(ctx,book.title,frontX+safe+0.3*DPI,B+safe+0.75*DPI,FW-2*safe-0.6*DPI,'800 150px "Bricolage Grotesque"',165);
+  if(book.subtitle) textBlock(ctx,book.subtitle,frontX+safe+0.3*DPI,y+10,FW-2*safe-0.6*DPI,'400 64px "Atkinson Hyperlegible"',78);
+  if(book.author) textBlock(ctx,book.author,frontX+safe,H-B-safe-0.45*DPI,FW-2*safe,'700 70px "Atkinson Hyperlegible"',80);
+  // spine
+  if(cg.spineText){ ctx.save(); ctx.translate(spineX+cg.spine*DPI/2,H/2); ctx.rotate(Math.PI/2); const px=Math.max(16,Math.min(48,cg.spine*DPI-0.125*DPI)); ctx.font=`700 ${px}px "Atkinson Hyperlegible"`; ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(`${book.title}  ·  ${book.author||""}`.slice(0,90),0,0); ctx.restore(); }
+  // back
+  ctx.fillStyle="#fff"; const bx=backX+safe+0.3*DPI, bwid=FW-2*safe-0.6*DPI;
+  textBlock(ctx,book.blurb||`Color and learn! ${book.pages.length} original illustrations with fun, accurate captions about ${book.theme||book.title}. Single-sided pages so markers never bleed through.`,bx,B+safe+0.8*DPI,bwid,'400 56px "Atkinson Hyperlegible"',74,"left");
+  const th=drawn.filter(p=>p!==feat).slice(0,4), tw=(bwid-60)/2, tH=tw*900/750;
+  for(let i=0;i<th.length;i++){ const x=bx+(i%2)*(tw+60), yy=H*.38+Math.floor(i/2)*(tH*0.62+40); ctx.fillStyle="#fff"; ctx.fillRect(x,yy,tw,tH*0.6); await drawRev(ctx,curRev(th[i],book),x+10,yy+10,tw-20,tH*0.6-20,th[i].lineScale); }
+  ctx.fillStyle="#fff"; const bxw=2*DPI, bxh=1.2*DPI; ctx.fillRect(spineX-safe-0.125*DPI-bxw,H-B-safe-0.125*DPI-bxh,bxw,bxh);
+  const {jsPDF}=window.jspdf; const pdf=new jsPDF({unit:"in",format:[cg.fullW,cg.fullH],orientation:"landscape",compress:true});
+  pdf.addImage(c.toDataURL("image/jpeg",0.93),"JPEG",0,0,cg.fullW,cg.fullH,undefined,"FAST");
+  return pdf.output("blob");
+}
+async function offer(filename,data){
+  if(!S.downloads){ toast("Downloads need this page opened in claude.ai."); return; }
+  try{ await S.downloads.save({filename,data}); toast("Saved "+filename); }
+  catch(e){ if(e.code==="declined") toast("Download cancelled."); else if(e.code==="rate_limited") toast("A download prompt is already open."); else toast("Couldn't save the file: "+(e.message||e.code)); }
+}
+const safeName=s=>(s||"book").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,60)||"book";
+async function doExport(kind){
+  const book=S.book; if(S.exporting) return;
+  S.exporting={kind,frac:0,msg:"Starting"}; render();
+  try{
+    if(kind==="proof"||kind==="interior"){ const r=await buildInterior(book,kind==="proof",(f,m)=>{S.exporting={kind,frac:f,msg:m}; renderExportBar();}); await offer(`${safeName(book.title)}-${kind==="proof"?"proof":"interior"}.pdf`,r.blob); }
+    else if(kind==="cover"){ S.exporting.msg="Drawing the cover"; renderExportBar(); await offer(`${safeName(book.title)}-cover.pdf`,await buildCover(book)); }
+    else if(kind==="backup"){ const art={}; book.pages.forEach(p=>art[p.id]=artOf(p.id,book)); await offer(`${safeName(book.title)}-project.json`,JSON.stringify({book,art},null,1)); }
+  }catch(e){ toast("Export failed: "+(e.message||e)); }
+  S.exporting=null; render();
+}
+function bookQA(book){
+  const g=geometry(book), n=book.pages.length, cs=capSettings(book);
+  const noArt=book.pages.filter(p=>!p.cur), notAppr=book.pages.filter(p=>!(p.locked||p.status==="approved")), qaFail=book.pages.filter(p=>p.cur&&!qaPassed(book,p));
+  const capBad=cs.enabled?book.pages.filter(p=>!p.caption||p.captionStatus==="invalid"):[], capRev=cs.enabled?book.pages.filter(p=>p.captionStatus==="review"):[];
+  const alloc=book.sections.reduce((a,s)=>a+s.count,0); const L=a=>a.slice(0,12).map(p=>pageNo(book,p)).join(", ")+(a.length>12?"…":"");
+  return [
+    {id:"Illustration count",ok:n>0&&alloc===n,mand:true,msg:`${n} pages planned; sections allocate ${alloc}`},
+    {id:"KDP page count",ok:g.pages>=24&&g.pages<=828,mand:true,msg:`${g.pages} interior pages (KDP needs 24–828)`},
+    {id:"Every page has artwork",ok:!noArt.length,mand:true,msg:noArt.length?`Missing on pages ${L(noArt)}`:"All illustrated"},
+    {id:"Image checks",ok:!qaFail.length,mand:true,msg:qaFail.length?`Failing on pages ${L(qaFail)}`:"All pages pass the required image checks"},
+    {id:"Every page approved",ok:!notAppr.length,mand:true,msg:notAppr.length?`${notAppr.length} not approved yet (${L(notAppr)})`:"All approved or locked"},
+    {id:"Captions present and fit",ok:!capBad.length,mand:true,msg:capBad.length?`Fix pages ${L(capBad)}`:cs.enabled?"All captions fit the band":"Captions turned off"},
+    {id:"Captions reviewed",ok:!capRev.length,mand:false,msg:capRev.length?`${capRev.length} flagged for review (approving a page counts as review)`:"Nothing flagged"},
+    {id:"Margins",ok:g.gutter>=g.kdpGutter&&g.out>=0.25,mand:true,msg:`Gutter ${g.gutter} in (KDP minimum ${g.kdpGutter}), outside ${g.out} in`},
+    {id:"Single-sided layout",ok:true,mand:true,msg:"Every illustration on a right-hand page with a blank back"},
+    {id:"Fonts",ok:true,mand:true,msg:"Pages are 300 PPI images with text drawn in, so no fonts need embedding"},
+    {id:"Publication approval",ok:!!book.publicationApproved,mand:true,msg:book.publicationApproved?"You approved this book for publication":"Tick the approval box below"},
+  ];
+}
+
+/* ============================================================ rendering */
+function render(){
+  const b=S.book; $("#bookName").textContent=b?b.title:"";
+  $("#tabs").innerHTML=VIEWS.map(([v,l],i)=>`<button class="tab" data-act="go" data-view="${v}" ${S.view===v?'aria-current="page"':""} ${!b&&v!=="library"?"disabled":""}>${i?`<span class="step">${String(i).padStart(2,"0")}</span>`:""}${l}</button>`).join("");
+  const showChat=!!b && S.view!=="library";
+  $("#chat").hidden=!(showChat&&S.chatOpen); $("#chatFab").hidden=!(showChat&&!S.chatOpen); $("#shell").classList.toggle("no-chat",!(showChat&&S.chatOpen)&&window.innerWidth>1000 || !showChat);
+  const v=$("#view"); v.innerHTML=(VIEW_FN[S.view]||vLibrary)();
+  if(showChat&&S.chatOpen) renderChat();
+  renderDrawer(); fillThumbs();
+}
+function fillThumbs(){ document.querySelectorAll("img[data-rev]").forEach(img=>{ const book=S.library.find(x=>x.id===img.dataset.book)||S.book; const p=book?.pages.find(x=>x.id===img.dataset.page); const rev=p&&artOf(p.id,book).revs.find(r=>r.id===img.dataset.rev); if(!rev) return; thumb(rev,+img.dataset.scale||1).then(u=>{ if(img.isConnected) img.src=u; }).catch(()=>{ img.alt="Drawing could not be shown"; }); }); }
+function revImg(book,p,rev,scale){ return rev?`<img alt="${esc(p.subject)}" data-book="${book.id}" data-page="${p.id}" data-rev="${rev.id}" data-scale="${scale??p.lineScale}">`:""; }
+function statusOf(p){ return p.locked?"locked":p.status; }
+function badge(p){ const s=statusOf(p); return `<span class="st st-${s}">${STATUS_LABEL[s]||s}</span>`; }
+function checksHtml(list){ return `<ul class="checks">${list.map(c=>`<li><span class="i ${c.ok?"ok":c.mand?"fl":"wn"}" aria-label="${c.ok?"pass":c.mand?"fail":"warning"}">${c.ok?"✓":c.mand?"✕":"!"}</span><span><b>${esc(c.id)}</b>${c.mand?"":` <span class="muted small">(advice)</span>`}: ${esc(c.msg)}</span></li>`).join("")}</ul>`; }
+function claudeNote(){ return S.sample?"":`<p class="note warn">Claude artist and Claude research need this page open in claude.ai while you're signed in. The Sketch engine and everything else still work.</p>`; }
+
+function vLibrary(){
+  if(S.loading) return `<section class="panel"><h1>Your library</h1><p class="muted">Loading your saved books…</p></section>`;
+  const books=S.library.filter(b=>S.showArchived||!b.archived).sort((a,b)=>b.updated-a.updated);
+  return `
+  <section class="panel hero">
+    <div><h1>Make original coloring books for Amazon KDP</h1>
+      <p class="lead muted">Plan sections, draw every page with Claude or the offline sketch engine, edit by chatting, check quality, and download print-ready interior and cover PDFs. No API keys or paid services: drawings use your Claude plan, and everything else runs in your browser.</p>
+      <div class="row" style="margin-top:12px"><button class="btn primary" data-act="sample-book">Start the sample book (40 pages)</button><button class="btn" data-act="new-open">New book</button></div></div>
+    <div class="hero-art" aria-hidden="true">${[0,1,2].map(i=>`<div class="sheet"><canvas data-hero="${i}" width="150" height="178" style="width:100%;height:100%"></canvas></div>`).join("")}</div>
+  </section>
+  ${S.newOpen?vNewForm():""}
+  <section class="panel">
+    <div class="panel-head"><h2>Books</h2><span class="muted small">${books.length} ${books.length===1?"book":"books"}</span><span class="spacer"></span><label class="check small"><input type="checkbox" id="archToggle" data-act="toggle-archived" ${S.showArchived?"checked":""}> Show archived</label></div>
+    ${books.length?`<div class="lib">${books.map(bookCard).join("")}</div>`:`<p class="muted">No books yet. Start the sample book above, or create a new one for any topic.</p>`}
+  </section>`;
+}
+function bookCard(b){
+  const s=b.summary||{pages:b.pages.length,drawn:0,approved:0}; const first=b.pages.find(p=>p.cur); const rev=first?(S.art[b.id]?.[first.id]?.revs||[]).find(r=>r.id===first.cur):null;
+  const conf=S.confirm&&S.confirm.kind==="delete"&&S.confirm.id===b.id;
+  return `<article class="book"><div class="cover-thumb" data-act="open" data-id="${b.id}" role="button" tabindex="0" aria-label="Open ${esc(b.title)}">${rev?revImg(b,first,rev):`<span class="ph">${esc((b.title||"?")[0])}</span>`}</div>
+  <h3>${esc(b.title)}</h3><p class="muted small" style="margin:0">${esc(b.theme)} · ages ${esc(b.age)} · ${esc(b.trim)} in${b.archived?" · archived":""}</p>
+  <div class="bar" aria-label="Approved ${s.approved} of ${s.pages}"><i style="width:${s.pages?Math.round(100*s.approved/s.pages):0}%"></i></div>
+  <p class="small mono muted" style="margin:0">${s.drawn}/${s.pages} drawn · ${s.approved} approved</p>
+  ${conf?`<div class="confirm">Delete “${esc(b.title)}” and its drawings for good? <button class="btn danger" data-act="delete-yes" data-id="${b.id}">Delete</button><button class="btn" data-act="confirm-no">Keep</button></div>`:
+  `<div class="row"><button class="btn" data-act="open" data-id="${b.id}">Open</button><button class="btn ghost" data-act="duplicate" data-id="${b.id}">Duplicate</button><button class="btn ghost" data-act="archive" data-id="${b.id}">${b.archived?"Unarchive":"Archive"}</button><button class="btn ghost danger" data-act="delete" data-id="${b.id}">Delete</button></div>`}</article>`;
+}
+function vNewForm(){
+  return `<section class="panel"><form id="newForm"><div class="panel-head"><h2>New book</h2></div><div class="fields">
+  <label class="f">Title<input class="in" id="nf-title" required placeholder="Ocean Explorers"></label>
+  <label class="f">Subtitle<input class="in" id="nf-subtitle" placeholder="A learn-while-you-color adventure"></label>
+  <label class="f">Author or publisher<input class="in" id="nf-author"></label>
+  <label class="f">Theme <span class="h">What the book teaches</span><input class="in" id="nf-theme" required placeholder="ocean animals"></label>
+  <label class="f">Target age<select class="in" id="nf-age">${["3-5","4-8","6-9","8-12"].map(a=>`<option ${a==="6-9"?"selected":""}>${a}</option>`).join("")}</select></label>
+  <label class="f">Illustrations<input class="in" id="nf-count" type="number" min="10" max="200" value="30"></label>
+  <label class="f">Trim size (in)<select class="in" id="nf-trim">${Object.keys(TRIMS).map(t=>`<option>${t}</option>`).join("")}</select></label>
+  <label class="f">Paper<select class="in" id="nf-paper"><option value="white">White</option><option value="cream">Cream</option></select></label>
+  <label class="f">Drawing engine<select class="in" id="nf-engine">${Object.entries(ENGINES).map(([k,e])=>`<option value="${k}" ${k==="claude-default"&&S.sample||k==="sketch"&&!S.sample?"selected":""}>${e.label}</option>`).join("")}</select></label>
+  <label class="f">Illustration style<input class="in" id="nf-style" value="clean cartoon line art"></label>
+  </div><div class="row" style="margin-top:12px"><button class="btn primary" type="submit">Create book</button><button class="btn ghost" type="button" data-act="new-close">Cancel</button></div></form></section>`;
+}
+function vResearch(){
+  const b=S.book, r=b.research;
+  return `<section class="panel"><div class="panel-head"><h1>Smart theme research</h1><span class="spacer"></span>
+    <button class="btn" data-act="research-offline">Use built-in research</button><button class="btn primary" data-act="research-claude" ${S.sample&&!S.busy?"":"disabled"}>${S.busy==="research"?"Researching…":"Research with Claude"}</button></div>
+    <p class="lead muted">Research gives you original illustration ideas, accurate facts for captions, a learning order and pitfalls to avoid. It is inspiration only: no coloring pages or images are copied from anywhere.</p>${claudeNote()}</section>
+  ${r?`<section class="panel"><div class="panel-head"><h2>${esc(b.theme)}</h2><span class="pill ${r.verified?"good":"warn"}">${esc(r.mode)}</span><span class="spacer"></span><button class="btn primary" data-act="go" data-view="plan">Plan sections →</button></div>
+    <p class="lead">${esc(r.overview)}</p></section>
+  <div class="grid2"><section class="panel"><h2>Learning order</h2><ol>${r.sections.map(s=>`<li><b>${esc(s.name)}</b> <span class="muted small">${esc(s.stage)}</span><br><span class="small">${esc(s.goals)}</span></li>`).join("")}</ol></section>
+  <section class="panel"><h2>Pitfalls to avoid</h2><ul>${r.pitfalls.map(x=>`<li>${esc(x)}</li>`).join("")}</ul><h3 style="margin-top:10px">References</h3>${r.references.length?`<ul class="small">${r.references.map(x=>`<li>${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>`:esc(x.title)} · ${esc(x.publisher||"")} <span class="muted">(${esc(x.license||"")})</span></li>`).join("")}</ul>`:`<p class="muted small">None for offline templates.</p>`}</section></div>
+  <section class="panel"><h2>Illustration ideas (${r.subjects.length})</h2><div class="table-wrap"><table><thead><tr><th>Stage</th><th>Subject</th><th>Scene</th><th>Fact</th></tr></thead><tbody>${r.subjects.map(s=>`<tr><td class="mono">${s.stage+1}</td><td><b>${esc(s.subject)}</b></td><td class="small">${esc(s.scene)}</td><td class="small">${esc(s.fact||"–")}</td></tr>`).join("")}</tbody></table></div></section>`:
+  `<section class="panel"><p class="muted">No research yet. Use the built-in research or ask Claude.</p></section>`}`;
+}
+function vPlan(){
+  const b=S.book, rec=recommend(b.count), g=geometry(b), alloc=b.sections.reduce((a,s)=>a+s.count,0), hasArt=b.pages.some(p=>p.cur);
+  return `<section class="panel"><div class="panel-head"><h1>Book settings</h1></div><div class="fields">
+    ${[["title","Title"],["subtitle","Subtitle"],["author","Author"],["theme","Theme"],["style","Illustration style"]].map(([k,l])=>`<label class="f">${l}<input class="in" data-bind="${k}" value="${esc(b[k]||"")}"></label>`).join("")}
+    <label class="f">Target age<select class="in" data-bind="age">${["3-5","4-8","6-9","8-12"].map(a=>`<option ${a===b.age?"selected":""}>${a}</option>`).join("")}</select></label>
+    <label class="f">Trim size<select class="in" data-bind="trim">${Object.keys(TRIMS).map(t=>`<option ${t===b.trim?"selected":""}>${t}</option>`).join("")}</select></label>
+    <label class="f">Paper<select class="in" data-bind="paper"><option value="white" ${b.paper==="white"?"selected":""}>White</option><option value="cream" ${b.paper==="cream"?"selected":""}>Cream</option></select></label>
+    <label class="f">Default drawing engine<select class="in" data-bind="engine">${Object.entries(ENGINES).map(([k,e])=>`<option value="${k}" ${k===b.engine?"selected":""}>${e.label}</option>`).join("")}</select></label>
+    <label class="f">Batch size<select class="in" data-bind="batch">${[1,3,5,10].map(n=>`<option ${n===b.batch?"selected":""}>${n}</option>`).join("")}</select></label>
+  </div><p class="small muted" style="margin-bottom:0">Interior: <span class="mono">${g.pages}</span> pages · art area <span class="mono">${g.artW}×${g.artH} in</span> · gutter <span class="mono">${g.gutter} in</span> · spine <span class="mono">${coverGeo(b).spine} in</span></p></section>
+  <section class="panel"><div class="panel-head"><h2>Sections</h2><span class="pill ${alloc===b.pages.length&&b.pages.length?"good":"bad"}">${alloc} of ${b.pages.length||b.count} allocated</span><span class="spacer"></span>
+    <label class="f" style="flex-direction:row;align-items:center;gap:6px">Illustrations <input class="in mono" style="width:90px" type="number" min="10" max="200" id="planCount" value="${b.count}" ${hasArt?"disabled":""}></label>
+    <label class="f" style="flex-direction:row;align-items:center;gap:6px">Sections <input class="in mono" style="width:70px" type="number" min="1" max="30" id="planK" value="${b.sections.length||rec.rec}" ${hasArt?"disabled":""}></label>
+    <button class="btn primary" data-act="build-plan" ${!b.research||hasArt?"disabled":""}>${b.sections.length?"Rebuild plan":"Build plan"}</button></div>
+    <p class="small muted">Recommended for ${b.count} illustrations: ${rec.lo===rec.hi?rec.lo:rec.lo+"–"+rec.hi} sections. ${hasArt?"Pages already have artwork, so change sections one at a time below. Rebuilding is off to protect your work.":!b.research?"Run research first.":""}</p>
+    ${b.sections.map((s,i)=>{ const mine=b.pages.filter(p=>p.sectionId===s.id); const first=b.pages.indexOf(mine[0])+1; return `<div class="panel" style="margin-top:10px;background:var(--paper)">
+      <div class="panel-head"><h3>Section ${i+1}</h3><span class="muted small mono">pages ${first}–${first+mine.length-1} · ${esc(s.stage)} · ${mine.filter(p=>p.status==="approved"||p.locked).length} approved</span><span class="spacer"></span>
+      <button class="btn ghost" data-act="sec-move" data-i="${i}" data-d="-1" ${i?"":"disabled"} aria-label="Move up">↑</button><button class="btn ghost" data-act="sec-move" data-i="${i}" data-d="1" ${i<b.sections.length-1?"":"disabled"} aria-label="Move down">↓</button>
+      <button class="btn ghost" data-act="sec-gen" data-i="${i}">Draw missing</button><button class="btn ghost" data-act="sec-approve" data-i="${i}">Approve all</button><button class="btn ghost danger" data-act="sec-remove" data-i="${i}">Remove</button></div>
+      <div class="fields"><label class="f">Name<input class="in" data-sec="${i}" data-k="name" value="${esc(s.name)}"></label>
+      <label class="f">Illustrations<input class="in mono" type="number" min="1" data-sec="${i}" data-k="count" value="${s.count}"></label>
+      <label class="f">Detail<select class="in" data-sec="${i}" data-k="complexity">${["low","medium","high"].map(x=>`<option ${x===s.complexity?"selected":""}>${x}</option>`).join("")}</select></label>
+      <label class="f">Engine<select class="in" data-sec="${i}" data-k="engine"><option value="">Book default</option>${Object.entries(ENGINES).map(([k,e])=>`<option value="${k}" ${k===s.engine?"selected":""}>${e.label}</option>`).join("")}</select></label>
+      <label class="f" style="grid-column:1/-1">Guidance for drawings<textarea class="in" data-sec="${i}" data-k="instructions" placeholder="e.g. show realistic valves and gauges">${esc(s.instructions||"")}</textarea></label></div>
+      <p class="small muted" style="margin:6px 0 0">${esc(s.goals)}</p></div>`; }).join("")}
+    ${b.sections.length?`<div class="row" style="margin-top:10px"><button class="btn" data-act="sec-add">Add section</button></div>`:""}</section>`;
+}
+function vStudio(){
+  const b=S.book; if(!b.pages.length) return `<section class="panel"><h1>Illustration studio</h1><p class="muted">No pages yet. Run <a href="#" data-act="go" data-view="research">research</a>, then build the plan.</p></section>`;
+  const counts={}; b.pages.forEach(p=>{const s=statusOf(p); counts[s]=(counts[s]||0)+1;});
+  const shown=b.pages.filter(p=>S.filter==="all"||statusOf(p)===S.filter);
+  const sel=[...S.selected].map(id=>b.pages.find(p=>p.id===id)).filter(Boolean);
+  return `<section class="panel"><div class="panel-head"><h1>Illustration studio</h1><span class="spacer"></span>
+    <label class="f" style="flex-direction:row;align-items:center;gap:6px">Engine<select class="in" data-bind="engine" style="width:auto">${Object.entries(ENGINES).map(([k,e])=>`<option value="${k}" ${k===b.engine?"selected":""}>${e.label}</option>`).join("")}</select></label>
+    <button class="btn primary" data-act="gen-next">Draw next ${b.batch}</button></div>
+    <p class="small muted" style="margin:0 0 10px">Review each batch: approve good pages, request a revision for the rest, then draw the next batch. Locked pages are never changed. ${b.engine==="sketch"?"The Sketch engine draws abstract placeholder shapes for testing the workflow; use Claude for real subject drawings.":""}</p>${b.engine!=="sketch"?claudeNote():""}
+    ${Q.running||Q.items.length?`<div class="queuebar" role="status"><b>${Q.paused?"Paused":"Drawing"}</b><span class="mono">${Q.done}/${Q.total}</span>${Q.current?`<span>page ${pageNo(Q.current.book,Q.current.page)}: ${esc(Q.current.page.subject)}</span>`:""}<span class="spacer"></span>${Q.paused?`<button class="btn" data-act="q-resume">Resume</button>`:`<button class="btn" data-act="q-pause">Pause after this page</button>`}<button class="btn ghost" data-act="q-cancel">Cancel queued</button></div>`:""}
+    <div class="filters" style="margin-top:10px">${["all",...Object.keys(STATUS_LABEL)].filter(s=>s==="all"||counts[s]).map(s=>`<button class="chip" data-act="filter" data-f="${s}" aria-pressed="${S.filter===s}">${s==="all"?"All":STATUS_LABEL[s]} <span class="mono">${s==="all"?b.pages.length:counts[s]}</span></button>`).join("")}</div>
+    ${sel.length?`<div class="queuebar" style="margin-top:10px"><b>${sel.length} selected</b><button class="btn" data-act="bulk" data-a="approve">Approve</button><button class="btn" data-act="bulk" data-a="reject">Request revision</button><button class="btn" data-act="bulk" data-a="lock">Lock</button><button class="btn" data-act="bulk" data-a="redraw">Redraw</button><button class="btn ghost" data-act="bulk" data-a="clear">Clear</button></div>`:""}
+  </section>
+  ${b.sections.map((s,si)=>{ const ps=shown.filter(p=>p.sectionId===s.id); if(!ps.length) return ""; return `<section class="panel"><div class="sec-title"><h2>${si+1}. ${esc(s.name)}</h2><span class="muted small">${b.pages.filter(p=>p.sectionId===s.id&&(p.locked||p.status==="approved")).length}/${s.count} approved</span></div>
+    <div class="pages">${ps.map(p=>{ const r=curRev(p); const n=pageNo(b,p); const qa=r&&!qaPassed(b,p); return `<div class="pg"><button class="sheet ${statusOf(p)==="generating"?"gen":""}" data-act="page" data-id="${p.id}" aria-label="Open page ${n}: ${esc(p.subject)}">${r?revImg(b,p,r):`<span class="empty">${STATUS_LABEL[statusOf(p)]}${p.error?"<br>"+esc(p.error.slice(0,80)):""}</span>`}</button>
+      <span class="num">${n}</span>${p.locked?`<span class="lock">locked</span>`:""}<input class="sel" type="checkbox" data-act="select" data-id="${p.id}" ${S.selected.has(p.id)?"checked":""} aria-label="Select page ${n}">
+      <span class="t" title="${esc(p.subject)}">${esc(p.subject)}</span><span class="meta">${badge(p)}${qa?`<span class="st st-failed">QA</span>`:""}<span class="small muted">${r?esc(ENGINES[r.engine]?.label.replace("Claude artist · ","Claude ")||r.engine):""}</span></span></div>`; }).join("")}</div></section>`; }).join("")}`;
+}
+function vBattle(){
+  const b=S.book; const p=b.pages.find(x=>x.id===S.battlePage); const bt=p&&b.battles&&b.battles[p.id];
+  return `<section class="panel"><div class="panel-head"><h1>Model battle</h1></div><p class="lead muted">Draw the same page with several engines and compare them side by side. Nothing replaces the page's artwork until you choose a winner. Approved pages ask first; locked pages can't be replaced.</p>${claudeNote()}
+    <div class="row" style="margin-top:10px"><label class="f" style="min-width:min(320px,100%)">Page<select class="in" id="battlePage"><option value="">Choose a page…</option>${b.pages.map((x,i)=>`<option value="${x.id}" ${x.id===S.battlePage?"selected":""}>${i+1}. ${esc(x.subject)}${x.locked?" (locked)":""}</option>`).join("")}</select></label></div>
+    <fieldset style="border:0;padding:0;margin:10px 0"><legend class="small" style="font-weight:700;margin-bottom:6px">Contenders</legend><div class="row">${Object.entries(ENGINES).map(([k,e])=>`<label class="check"><input type="checkbox" data-act="battle-eng" data-e="${k}" ${S.battleSel.has(k)?"checked":""} ${k!=="sketch"&&!S.sample?"disabled":""}> ${e.label}</label>`).join("")}</div></fieldset>
+    <button class="btn primary" data-act="battle-run" ${p&&S.battleSel.size>=2&&!(bt&&bt.status==="running")?"":"disabled"}>${bt&&bt.status==="running"?"Drawing…":"Start battle"}</button></section>
+  ${bt?`<section class="panel"><div class="panel-head"><h2>Page ${pageNo(b,p)}: ${esc(p.subject)}</h2>${badge(p)}</div>
+    ${S.confirm&&S.confirm.kind==="winner"?`<div class="confirm">This page is approved. Replace its artwork with the chosen drawing? <button class="btn danger" data-act="winner-yes">Replace</button><button class="btn" data-act="confirm-no">Keep current</button></div>`:""}
+    <div class="contenders" style="margin-top:10px">${p.cur&&!bt.cands.some(c=>c.rev===p.cur)?candHtml(b,p,{engine:curRev(p)?.engine,rev:p.cur},true):""}${bt.cands.map(c=>candHtml(b,p,c,false)).join("")}${bt.status==="running"&&bt.cands.length<bt.engines.length?`<div class="cand"><div class="sheet gen"><span class="empty">Drawing with ${ENGINES[bt.engines[bt.cands.length]].label}…</span></div></div>`:""}</div>
+    <p class="small muted">Scores are measured from the pixels (line clarity, composition, open coloring space). No AI judge rates the pictures; that's your call.</p></section>`:""}`;
+}
+function candHtml(b,p,c,isCurrent){
+  if(c.error) return `<div class="cand"><b>${esc(ENGINES[c.engine]?.label||c.engine)}</b><p class="note bad">${esc(c.error)}</p></div>`;
+  const r=artOf(p.id,b).revs.find(x=>x.id===c.rev); if(!r) return "";
+  const win=p.cur===r.id;
+  return `<div class="cand ${win?"win":""}"><div class="sheet" style="cursor:default">${revImg(b,p,r,1)}</div><b>${esc(ENGINES[r.engine]?.label||r.engine)}${isCurrent?" · current":""}${win?" · in use":""}</b>
+  <div class="scores">${Object.entries(r.metrics.scores).map(([k,v])=>`<span>${k}</span><span class="mono">${v}</span><span class="meter"><i style="width:${v}%"></i></span>`).join("")}</div>
+  <p class="small muted mono" style="margin:0">${(r.metrics.ink*100).toFixed(1)}% ink · ${(r.ms/1000).toFixed(1)} s · ${r.kind==="svg"?"vector SVG":"procedural"}</p>
+  ${win?"":`<button class="btn primary" data-act="winner" data-rev="${r.id}">Use this drawing</button>`}</div>`;
+}
+function vCaptions(){
+  const b=S.book, st=capSettings(b);
+  return `<section class="panel"><div class="panel-head"><h1>Learn-while-you-color captions</h1><span class="spacer"></span><button class="btn" data-act="cap-all">Rewrite all unlocked from facts</button></div>
+    <div class="row">${[["enabled","Captions on"],["funFact","“Fun fact:” prefix"],["vocabulary","Vocabulary word"],["question","Question"]].map(([k,l])=>`<label class="check"><input type="checkbox" data-cap="${k}" ${st[k]?"checked":""}> ${l}</label>`).join("")}
+    <label class="check">Length <select class="in" data-cap="length" style="width:auto">${["short","medium","long"].map(x=>`<option ${x===st.length?"selected":""}>${x}</option>`).join("")}</select></label>
+    <label class="check">Size <select class="in" data-cap="fontPt" style="width:auto">${[11,12,13,14,16].map(x=>`<option value="${x}" ${x===st.fontPt?"selected":""}>${x} pt</option>`).join("")}</select></label></div>
+    <p class="small muted" style="margin-bottom:0">Each caption must fit ${st.maxLines} lines under the picture at print size and suggest nothing unsafe. Reading level, relevance and sources are advice. Editing a caption never redraws the picture.</p></section>
+  <section class="panel"><div class="table-wrap"><table><thead><tr><th>#</th><th>Picture</th><th style="min-width:280px">Caption</th><th>Checks</th></tr></thead><tbody>${b.pages.map((p,i)=>{ const r=checkCaption(b,p,p.caption||""); const rev=curRev(p); return `<tr><td class="mono">${i+1}</td><td style="width:110px"><div class="sheet" style="width:90px" data-act="page" data-id="${p.id}">${rev?revImg(b,p,rev):`<span class="empty">–</span>`}</div><div class="small" style="margin-top:4px">${esc(p.subject)}</div></td>
+    <td><textarea class="in" rows="3" data-capedit="${p.id}" ${p.locked?"disabled":""} aria-label="Caption for page ${i+1}">${esc(p.caption)}</textarea><div class="row" style="margin-top:6px"><button class="btn" data-act="cap-save" data-id="${p.id}" ${p.locked?"disabled":""}>Save</button><button class="btn ghost" data-act="cap-rewrite" data-id="${p.id}" ${p.locked?"disabled":""}>Rewrite${S.sample?" with Claude":""}</button></div></td>
+    <td class="small">${checksHtml(r.checks.filter(c=>!c.ok||c.mand))}</td></tr>`; }).join("")}</tbody></table></div></section>`;
+}
+function vPreview(){
+  const b=S.book, g=geometry(b), cg=coverGeo(b);
+  const seq=[{k:"title"},{k:"copyright"},{k:"belongs"},{k:"contents"}]; b.pages.forEach(p=>{seq.push({k:"art",p}); seq.push({k:"blank"});});
+  const spreads=[[null,seq[0]]]; for(let i=1;i<seq.length;i+=2) spreads.push([seq[i],seq[i+1]||null]);
+  const si=clamp(S.previewSpread,0,spreads.length-1);
+  const pct=(v,t)=>(v/t*100).toFixed(2)+"%";
+  const pg=(it,num)=>{ if(!it) return `<div></div>`; const recto=num%2===1, L=recto?g.gutter:g.out, R=recto?g.out:g.gutter; let inner="";
+    if(it.k==="art"){ const r=curRev(it.p); inner=`<div class="art" style="left:${pct(L,g.w)};width:${pct(g.artW,g.w)};top:${pct(g.top,g.h)};height:${pct(g.artH,g.h)}">${r?revImg(b,it.p,r):`<span class="small" style="color:#7a8794">[${esc(it.p.subject)}]</span>`}</div><div class="cap" style="left:${pct(L,g.w)};width:${pct(g.artW,g.w)};bottom:${pct(g.bottom,g.h)};height:${pct(CAP_BAND,g.h)}">${esc(it.p.caption)}</div>`; }
+    else if(it.k==="title") inner=`<div class="fm"><b style="font-family:var(--f-display);font-size:clamp(10px,2vw,20px)">${esc(b.title)}</b><span class="small">${esc(b.subtitle||"")}</span></div>`;
+    else if(it.k==="copyright") inner=`<div class="fm" style="justify-content:flex-end"><span style="font-size:8px">© ${esc(b.author||"")} · copyright and AI-assistance notice</span></div>`;
+    else if(it.k==="belongs") inner=`<div class="fm"><b>This book belongs to</b><span>________________</span></div>`;
+    else if(it.k==="contents") inner=`<div class="fm" style="justify-content:flex-start;align-items:flex-start;text-align:left"><b>Contents</b>${b.sections.map((s,i)=>`<span style="font-size:8px">${i+1}. ${esc(s.name)}</span>`).join("")}</div>`;
+    return `<div class="ppage" aria-label="Page ${num}${it.k==="blank"?" (blank back)":""}"><div class="safe" style="left:${pct(L,g.w)};right:${pct(R,g.w)};top:${pct(g.top,g.h)};bottom:${pct(g.bottom,g.h)}"></div>${inner}<div class="pn">${num}${it.k==="blank"?" · blank back":""}</div></div>`; };
+  const [lft,rgt]=spreads[si], ln=si===0?0:2*si, rn=si===0?1:2*si+1;
+  return `<section class="panel"><div class="panel-head"><h1>Book preview</h1><span class="muted small mono">${g.pages} pages · ${b.trim} in · ${b.paper}</span><span class="spacer"></span>
+    <button class="btn" data-act="spread" data-d="-1" ${si?"":"disabled"}>← Previous</button><span class="mono small">${si+1}/${spreads.length}</span><button class="btn" data-act="spread" data-d="1" ${si<spreads.length-1?"":"disabled"}>Next →</button></div>
+    <div class="spread">${pg(lft,ln)}${pg(rgt,rn)}</div>
+    <p class="small muted">Dashed lines mark the safe area (gutter ${g.gutter} in, outside ${g.out} in). Each picture is on a right-hand page with a blank back so markers can't bleed through.</p></section>
+  <section class="panel"><h2>Full-wrap cover</h2><div class="wrap-cover" style="aspect-ratio:${cg.fullW}/${cg.fullH};margin-top:10px"><div style="flex:${cg.w+0.125};background:#2141A3">Back cover<br><span class="mono">barcode area 2 × 1.2 in, bottom right</span></div><div style="flex:${cg.spine};background:#18307A;writing-mode:vertical-rl">${cg.spineText?"spine text":""}</div><div style="flex:${cg.w+0.125};background:var(--cobalt)">Front cover</div></div>
+    <p class="small muted mono">${cg.fullW} × ${cg.fullH} in · spine ${cg.spine} in (${cg.pages} × ${SPINE[b.paper]} in, ${b.paper} paper) · ${cg.spineText?"spine text allowed":"spine too thin for text (KDP needs over 79 pages)"}</p></section>`;
+}
+function renderExportBar(){ const el=$("#exportBar"); if(el&&S.exporting) el.innerHTML=`<div class="queuebar" role="status"><b>Building ${esc(S.exporting.kind)}</b><span>${esc(S.exporting.msg)}</span><div class="bar" style="flex:1;min-width:120px"><i style="width:${Math.round(S.exporting.frac*100)}%"></i></div></div>`; }
+function vPublish(){
+  const b=S.book, qa=bookQA(b), pass=qa.every(c=>c.ok||!c.mand);
+  return `<section class="panel"><div class="panel-head"><h1>Publish</h1><span class="pill ${pass?"good":"bad"}">${pass?"Ready for KDP":"Not ready yet"}</span></div>
+    ${checksHtml(qa)}
+    <label class="check" style="margin-top:12px"><input type="checkbox" data-act="pub-approve" ${b.publicationApproved?"checked":""}> I've reviewed every page and approve this book for publication</label>
+    <p class="small muted">These checks follow KDP's published paperback specs. They're a preflight; KDP's own review has the final say.</p></section>
+  <section class="panel"><div class="panel-head"><h2>Downloads</h2></div><div id="exportBar"></div>
+    <div class="row"><button class="btn" data-act="export" data-k="proof" ${S.exporting?"disabled":""}>Proof PDF (any time)</button>
+    <button class="btn primary" data-act="export" data-k="interior" ${pass&&!S.exporting?"":"disabled"}>Interior PDF for KDP</button>
+    <button class="btn primary" data-act="export" data-k="cover" ${pass&&!S.exporting?"":"disabled"}>Cover PDF for KDP</button>
+    <button class="btn ghost" data-act="export" data-k="backup" ${S.exporting?"disabled":""}>Project backup (.json)</button></div>
+    <p class="small muted">Interior: ${geometry(b).pages} pages at ${b.trim} in, 300 PPI, pure black and white. Cover: ${coverGeo(b).fullW} × ${coverGeo(b).fullH} in with 0.125 in bleed, colored from your first approved page.${S.downloads?"":" Downloads need this page opened in claude.ai."}</p></section>`;
+}
+const VIEW_FN={library:vLibrary,research:vResearch,plan:vPlan,studio:vStudio,battle:vBattle,captions:vCaptions,preview:vPreview,publish:vPublish};
+function renderDrawer(){
+  const d=$("#drawer"); const b=S.book; const p=b&&b.pages.find(x=>x.id===S.openPage);
+  if(!p){ d.innerHTML=""; return; }
+  const r=curRev(p), n=pageNo(b,p), revs=artOf(p.id).revs.filter(x=>!x.battle||x.id===p.cur), cr=checkCaption(b,p,p.caption||"");
+  d.innerHTML=`<div class="drawer-bg" data-act="close-drawer"><div class="drawer" role="dialog" aria-modal="true" aria-label="Page ${n}" data-stop="1">
+    <div class="panel-head" style="margin:0"><h2>Page ${n}: ${esc(p.subject)}</h2>${badge(p)}<span class="spacer"></span><button class="btn ghost" data-act="close-drawer" aria-label="Close">Close</button></div>
+    <div class="detail"><div class="big">${r?revImg(b,p,r):`<span class="muted small">${p.error?esc(p.error):"Not drawn yet"}</span>`}</div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="row">${!p.locked&&r&&p.status!=="approved"?`<button class="btn primary" data-act="pa" data-a="approve">Approve</button>`:""}${!p.locked&&r?`<button class="btn" data-act="pa" data-a="reject">Request revision</button><button class="btn" data-act="pa" data-a="lock">Lock</button>`:""}${p.locked?`<button class="btn" data-act="pa" data-a="unlock">Unlock</button>`:""}</div>
+      ${p.locked?`<p class="note">Locked: drawing, caption and subject can't change until you unlock it.</p>`:`<div class="row"><select class="in" id="redrawEngine" style="width:auto" aria-label="Engine">${Object.entries(ENGINES).map(([k,e])=>`<option value="${k}" ${k===b.engine?"selected":""}>${e.label}</option>`).join("")}</select><button class="btn" data-act="redraw">${r?"Redraw":"Draw"}</button></div>
+      ${r?`<div class="row"><button class="btn" data-act="lw" data-d="1">Thicker lines</button><button class="btn" data-act="lw" data-d="-1">Thinner lines</button><span class="small muted mono">×${p.lineScale}</span></div>`:""}`}
+      ${r?`<dl class="kv"><dt>Engine</dt><dd>${esc(ENGINES[r.engine]?.label||r.engine)}</dd><dt>Format</dt><dd>${r.kind==="svg"?"Vector SVG":"Procedural vector"} · prints at 300 PPI</dd>${Object.entries(r.metrics.scores).map(([k,v])=>`<dt>${k}</dt><dd class="mono">${v}/100</dd>`).join("")}</dl>${checksHtml(qaChecks(b,p,r.metrics))}`:""}
+    </div></div>
+    <section><div class="fields"><label class="f">Subject<input class="in" id="pdSubject" value="${esc(p.subject)}" ${p.locked?"disabled":""}></label><label class="f" style="grid-column:span 2">Scene<input class="in" id="pdScene" value="${esc(p.scene)}" ${p.locked?"disabled":""}></label></div>
+    <label class="f" style="margin-top:10px">Caption <span class="h">Editing the caption never redraws the picture</span><textarea class="in" id="pdCaption" rows="3" ${p.locked?"disabled":""}>${esc(p.caption)}</textarea></label>
+    <div class="row" style="margin-top:8px"><button class="btn primary" data-act="pd-save" ${p.locked?"disabled":""}>Save text</button><span class="small muted">${p.fact?"Planned fact: "+esc(p.fact):""}</span></div>
+    <div style="margin-top:8px">${checksHtml(cr.checks)}</div></section>
+    <section><h3>History</h3><div class="revs" style="margin-top:8px">${revs.length?revs.slice().reverse().map(x=>`<div class="rev ${x.id===p.cur?"cur":""}"><div class="sheet" style="cursor:default">${revImg(b,p,x,1)}</div><span>${esc(ENGINES[x.engine]?.label.replace("Claude artist · ","Claude ")||x.engine)}<br>${new Date(x.t).toLocaleTimeString()}</span>${x.id!==p.cur&&!p.locked?`<button class="btn" data-act="restore" data-rev="${x.id}">Restore</button>`:""}</div>`).join(""):`<span class="muted small">No drawings yet.</span>`}</div></section>
+  </div></div>`;
+}
+function renderChat(){
+  const b=S.book, msgs=b.chat||[];
+  $("#chat").innerHTML=`<div class="chat-head"><h2 style="font-size:1rem">Live book editor</h2><span class="spacer"></span><button class="btn ghost" data-act="chat-close" aria-label="Collapse editor">Hide</button></div>
+  <div class="msgs" id="msgs">${msgs.length?msgs.map(m=>`<div class="m ${m.role}">${esc(m.text)}</div>`).join(""):`<p class="small muted" style="margin:0">Tell me what to change. Edits apply to the saved book, and locked pages are never touched.</p>${["Draw the next five illustrations","Make the lines thicker on pages 2-4","Rewrite the caption on page 3","Compare page 1 with sketch and claude","Keep all approved pages unchanged","undo"].map(x=>`<button class="ex" data-act="chat-ex">${x}</button>`).join("")}`}
+  ${b.pending?`<div class="row"><button class="btn primary" data-act="chat-ex" data-t="confirm">Confirm</button><button class="btn" data-act="chat-ex" data-t="cancel">Cancel</button></div>`:""}</div>
+  <form id="chatForm"><label for="chatIn" class="sr-only" style="position:absolute;left:-9999px">Message</label><input class="in" id="chatIn" placeholder="e.g. Redraw page 4 with Claude" autocomplete="off" ${S.chatBusy?"disabled":""}><button class="btn primary" type="submit" ${S.chatBusy?"disabled":""}>Send</button></form>`;
+  const m=$("#msgs"); m.scrollTop=m.scrollHeight;
+}
+function drawHero(){ document.querySelectorAll("canvas[data-hero]").forEach(c=>{ const ctx=c.getContext("2d"); drawSketch(ctx,c.width,c.height,"hero"+c.dataset.hero+"pump",2.2); }); }
+
+/* ============================================================ actions */
+function newBook(f){ const b={kind:"book",id:newId(),title:f.title,subtitle:f.subtitle||"",author:f.author||"",theme:f.theme,age:f.age||"6-9",count:clamp(+f.count||30,10,200),trim:f.trim||"8.5x11",paper:f.paper||"white",engine:f.engine||"sketch",style:f.style||"clean cartoon line art",batch:5,sections:[],pages:[],research:null,captions:{},chat:[],history:[],battles:{},publicationApproved:false,archived:false,created:Date.now(),updated:Date.now()}; summarize(b); S.library.push(b); S.art[b.id]={}; return b; }
+async function openBook(id){ const b=S.library.find(x=>x.id===id); if(!b) return; S.book=b; S.selected.clear(); S.filter="all"; S.openPage=null; S.confirm=null; lsSet("cps:last",id); if(!S.art[b.id]) S.art[b.id]=await Store.loadArt(b.id).catch(()=>({}));
+  b.pages.forEach(p=>{ if(["queued","generating"].includes(p.status)&&!Q.items.some(it=>it.page===p)&&Q.current?.page!==p) p.status=p.cur?"review":"planned"; });
+  S.view=!b.research?"research":!b.pages.length?"plan":"studio"; render(); }
+const A={
+  go(d){ if(d.view!=="library"&&!S.book) return; S.view=d.view; S.confirm=null; render(); window.scrollTo({top:0}); },
+  "new-open"(){ S.newOpen=true; render(); $("#nf-title")?.focus(); }, "new-close"(){ S.newOpen=false; render(); },
+  async "sample-book"(){ const b=newBook({title:"Little Chemical Engineers",subtitle:"A Learn-While-You-Color Adventure",author:"Crayon Press",theme:"chemical engineering",age:"6-9",count:40,engine:S.sample?"claude-default":"sketch"}); b.research=offlineResearch(b); buildPlan(b,5); save(b); await openBook(b.id); S.view="studio"; render(); toast("Sample book planned: 5 sections, 40 pages. Press “Draw next 5” to start."); },
+  open(d){ openBook(d.id); },
+  async duplicate(d){ const src=S.library.find(x=>x.id===d.id); if(!src) return; if(!S.art[src.id]) S.art[src.id]=await Store.loadArt(src.id); const copy=JSON.parse(JSON.stringify(src)); copy.id=newId(); copy.title=src.title+" (copy)"; copy.publicationApproved=false; copy.created=copy.updated=Date.now(); S.library.push(copy); S.art[copy.id]=JSON.parse(JSON.stringify(S.art[src.id])); for(const p of copy.pages){ if(S.art[copy.id][p.id]) await Store.putArt(copy.id,p.id,S.art[copy.id][p.id]); } save(copy); render(); toast("Duplicated."); },
+  archive(d){ const b=S.library.find(x=>x.id===d.id); b.archived=!b.archived; save(b); render(); },
+  delete(d){ S.confirm={kind:"delete",id:d.id}; render(); }, "confirm-no"(){ S.confirm=null; render(); },
+  async "delete-yes"(d){ const b=S.library.find(x=>x.id===d.id); S.confirm=null; S.library=S.library.filter(x=>x!==b); if(S.book===b) S.book=null; render(); await Store.deleteBook(b); toast("Deleted “"+b.title+"”."); },
+  "toggle-archived"(d,el){ S.showArchived=el.checked; render(); },
+  "research-offline"(){ const b=S.book; b.research=offlineResearch(b); save(b); render(); },
+  async "research-claude"(){ const b=S.book; S.busy="research"; render(); try{ b.research=await claudeResearch(b); save(b); toast("Research ready."); }catch(e){ toast(e.code==="rate_limited"?"Claude usage limit reached. Try again later.":"Research failed: "+(e.message||e.code)); } S.busy=null; render(); },
+  "build-plan"(){ const b=S.book; if(b.pages.some(p=>p.cur)) return; b.count=clamp(+$("#planCount").value||b.count,10,200); const k=clamp(+$("#planK").value||recommend(b.count).rec,1,Math.min(30,b.count)); buildPlan(b,k); save(b); render(); toast(`Planned ${b.pages.length} pages in ${k} sections.`); },
+  "sec-move"(d){ const b=S.book, i=+d.i, j=i+ +d.d; [b.sections[i],b.sections[j]]=[b.sections[j],b.sections[i]]; orderPages(b); save(b); render(); },
+  "sec-gen"(d){ const b=S.book, s=b.sections[+d.i]; const n=enqueue(b,b.pages.filter(p=>p.sectionId===s.id&&!p.cur&&!p.locked),s.engine||b.engine); toast(n?`Queued ${n} page(s).`:"Every page in this section has artwork."); },
+  "sec-approve"(d){ const b=S.book, s=b.sections[+d.i]; let n=0; b.pages.filter(p=>p.sectionId===s.id).forEach(p=>{ if(p.status==="review"&&setStatus(b,p,"approve")) n++; }); render(); toast(`Approved ${n} page(s) awaiting review.`); },
+  "sec-remove"(d){ const b=S.book, s=b.sections[+d.i]; const mine=b.pages.filter(p=>p.sectionId===s.id); if(mine.some(p=>p.locked||p.status==="approved")){ toast("This section has approved or locked pages. Unlock them first."); return; } b.pages=b.pages.filter(p=>p.sectionId!==s.id); b.sections.splice(+d.i,1); b.count=b.pages.length; save(b); render(); },
+  "sec-add"(){ const b=S.book; const s={id:newId(),name:"New section",stage:"applications",goals:"",count:0,instructions:"",complexity:"medium"}; b.sections.push(s); setSectionCount(b,s,4); save(b); render(); },
+  "gen-next"(){ const b=S.book; const pg=nextPages(b,b.batch); if(!pg.length){ toast("Every page has artwork or is queued."); return; } enqueue(b,pg); },
+  "q-pause"(){ pauseQueue(); }, "q-resume"(){ runQueue(); }, "q-cancel"(){ cancelQueue(); },
+  filter(d){ S.filter=d.f; render(); },
+  select(d,el){ el.checked?S.selected.add(d.id):S.selected.delete(d.id); render(); },
+  bulk(d){ const b=S.book, ps=[...S.selected].map(id=>b.pages.find(p=>p.id===id)).filter(Boolean); if(d.a==="clear"){ S.selected.clear(); render(); return; }
+    if(d.a==="redraw"){ const run=ps.filter(p=>!p.locked&&p.status!=="approved"); enqueue(b,run); toast(`Queued ${run.length} page(s); approved and locked pages were skipped.`); }
+    else { let n=0; ps.forEach(p=>{ if(setStatus(b,p,d.a)) n++; }); toast(`${n} page(s) updated.`); } S.selected.clear(); render(); },
+  page(d){ S.openPage=d.id; render(); }, "close-drawer"(d,el,e){ if(e.target.closest("[data-stop]")&&!el.matches("button")) return; S.openPage=null; render(); },
+  pa(d){ const b=S.book, p=b.pages.find(x=>x.id===S.openPage); setStatus(b,p,d.a); render(); },
+  redraw(){ const b=S.book, p=b.pages.find(x=>x.id===S.openPage); enqueue(b,[p],$("#redrawEngine").value); toast(`Page ${pageNo(b,p)} queued.`); },
+  lw(d){ const b=S.book, p=b.pages.find(x=>x.id===S.openPage); lineWeight(b,p,+d.d); render(); },
+  restore(d){ const b=S.book, p=b.pages.find(x=>x.id===S.openPage); if(p.locked) return; remember(b,p,"restore"); p.cur=d.rev; p.status="review"; p.version++; save(b); render(); },
+  "pd-save"(){ const b=S.book, p=b.pages.find(x=>x.id===S.openPage); if(p.locked) return; const subj=$("#pdSubject").value.trim(), scene=$("#pdScene").value.trim(), cap=$("#pdCaption").value.trim(); remember(b,p,"edit text");
+    if(subj&&(subj!==p.subject||scene!==p.scene)){ p.subject=subj; p.scene=scene||subj; p.verified=false; if(p.cur){ p.status="revision"; } if(p.captionStatus==="ok") p.captionStatus="review"; }
+    if(cap!==p.caption) setCaption(b,p,cap,true); p.version++; save(b); render(); toast("Saved."); },
+  "battle-eng"(d,el){ el.checked?S.battleSel.add(d.e):S.battleSel.delete(d.e); render(); },
+  "battle-run"(){ const b=S.book, p=b.pages.find(x=>x.id===S.battlePage); if(p) runBattle(b,p,[...S.battleSel]); },
+  winner(d){ const b=S.book, p=b.pages.find(x=>x.id===S.battlePage); pickWinner(b,p,d.rev,false); },
+  "winner-yes"(){ const b=S.book, c=S.confirm, p=b.pages.find(x=>x.id===c.pid); pickWinner(b,p,c.rev,true); },
+  "cap-save"(d){ const b=S.book, p=b.pages.find(x=>x.id===d.id), t=document.querySelector(`[data-capedit="${d.id}"]`).value.trim(); if(p.locked) return; remember(b,p,"caption"); const r=setCaption(b,p,t,true); save(b); render(); toast(r.passed?"Caption saved.":"Saved, but it doesn't fit the caption band."); },
+  async "cap-rewrite"(d){ const b=S.book, p=b.pages.find(x=>x.id===d.id); if(p.locked) return; remember(b,p,"caption"); setCaption(b,p,await rewriteCaption(b,p,""),false); save(b); render(); },
+  "cap-all"(){ const b=S.book; b.pages.filter(p=>!p.locked).forEach(p=>{remember(b,p,"caption"); composeCaption(b,p);}); save(b); render(); toast("Captions rewritten from the planned facts."); },
+  spread(d){ S.previewSpread=Math.max(0,S.previewSpread+ +d.d); render(); },
+  "pub-approve"(d,el){ S.book.publicationApproved=el.checked; save(); render(); },
+  export(d){ doExport(d.k); },
+  "chat-open"(){ S.chatOpen=true; lsSet("cps:chat","1"); render(); }, "chat-close"(){ S.chatOpen=false; lsSet("cps:chat","0"); render(); },
+  "chat-ex"(d,el){ sendChat(d.t||el.textContent); },
+};
+async function sendChat(text){ if(!text.trim()||S.chatBusy) return; S.chatBusy=true; render(); try{ await handleChat(text.trim()); }catch(e){ toast("Editor error: "+(e.message||e)); } S.chatBusy=false; render(); $("#chatIn")?.focus(); }
+document.addEventListener("click",e=>{ const el=e.target.closest("[data-act]"); if(!el) return; const act=el.dataset.act; if(el.tagName==="A") e.preventDefault(); if(act==="close-drawer"&&el.classList.contains("drawer-bg")&&e.target!==el) return; A[act]?.(el.dataset,el,e); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&S.openPage){ S.openPage=null; render(); } if(e.key==="Enter"&&e.target.matches(".cover-thumb")) e.target.click(); });
+document.addEventListener("submit",e=>{ e.preventDefault(); if(e.target.id==="newForm"){ const v=id=>$("#"+id).value.trim(); const b=newBook({title:v("nf-title"),subtitle:v("nf-subtitle"),author:v("nf-author"),theme:v("nf-theme"),age:v("nf-age"),count:v("nf-count"),trim:v("nf-trim"),paper:v("nf-paper"),engine:v("nf-engine"),style:v("nf-style")}); b.research=offlineResearch(b); save(b); S.newOpen=false; openBook(b.id); }
+  if(e.target.id==="chatForm"){ const i=$("#chatIn"); const t=i.value; i.value=""; sendChat(t); } });
+document.addEventListener("change",e=>{ const el=e.target, b=S.book; if(!b) return;
+  if(el.dataset.bind){ const k=el.dataset.bind; b[k]=k==="batch"?+el.value:el.value; if(k==="theme"&&!b.pages.length) b.research=null; save(b); if(["trim","paper","engine","batch"].includes(k)) render(); else $("#bookName").textContent=b.title; }
+  else if(el.dataset.sec!==undefined){ const s=b.sections[+el.dataset.sec], k=el.dataset.k; if(k==="count"){ const err=setSectionCount(b,s,clamp(+el.value||1,1,200)); if(err) toast(err); save(b); render(); } else { s[k]=el.value; save(b); } }
+  else if(el.dataset.cap){ b.captions=b.captions||{}; const k=el.dataset.cap; b.captions[k]=el.type==="checkbox"?el.checked:(k==="fontPt"?+el.value:el.value); b.pages.forEach(p=>{ if(p.caption) setCaption(b,p,p.caption,p.captionStatus==="ok"); }); save(b); render(); }
+  else if(el.id==="battlePage"){ S.battlePage=el.value||null; render(); } });
+window.addEventListener("resize",()=>{ clearTimeout(window.__rz); window.__rz=setTimeout(render,150); });
+
+/* ============================================================ boot */
+async function boot(){
+  S.chatOpen=lsGet("cps:chat")!=="0"; render(); drawHero();
+  const use=n=>(window.claude&&window.claude.use)?window.claude.use(n).catch(()=>null):Promise.resolve(null);
+  const timer=setTimeout(()=>{ if(S.loading){ S.loading=false; setStorePill(); render(); drawHero(); } },10000);
+  const [db,user,sample,downloads]=await Promise.all(["db","user","sample","downloads"].map(use));
+  S.sample=sample; S.downloads=downloads;
+  if(db&&user){ try{ const id=await user.id(); if(id){ S.db=db; S.uid=id; S.store="db"; } }catch{} }
+  if(S.store!=="db"){ S.store=lsSet("cps:probe","1")?"local":"memory"; }
+  try{ S.library=(await Store.listBooks()).filter(b=>b&&b.kind==="book"); }catch(e){ toast("Couldn't load your library: "+(e.message||e.code)); S.library=[]; }
+  clearTimeout(timer); S.loading=false; setStorePill();
+  await Promise.all(S.library.map(async b=>{ const first=b.pages.find(p=>p.cur); if(first){ S.art[b.id]=S.art[b.id]||await Store.loadArt(b.id).catch(()=>({})); } }));
+  render(); drawHero();
+}
+function setStorePill(){ const p=$("#storePill"); const m={db:["good","Saved to your account"],local:["warn","Saved in this browser only"],memory:["bad","Not saved: storage unavailable"]}[S.store]; p.className="pill "+m[0]; p.textContent=m[1];
+  const c=$("#claudePill"); c.className="pill "+(S.sample?"info":"warn"); c.textContent=S.sample?"Claude artist ready":"Claude artist off (sketch only)"; }
+const _render=render; render=function(){ _render(); if(S.view==="library") drawHero(); };
+boot();
+</script>
